@@ -6,6 +6,7 @@ from PIL import Image, ImageTk
 
 
 class ImageViewerApp:
+    ###  INIT FUNCTION  ###
     def __init__(self, root):
         self.root = root
         self.root.title("Image Viewer")
@@ -25,7 +26,7 @@ class ImageViewerApp:
         self.drawing_rect = False
         self.toggle_draw_inside = False
         self.fixed_rect = False
-        self.drag_enabled = False
+        self.drag_border_enabled = False
 
         # Thêm một bộ nút mới
         self.current_control_set = None
@@ -47,10 +48,12 @@ class ImageViewerApp:
         self.add_control_set("Set 3")
 
         # Thêm sự kiện chuột cho thay đổi kích thước border
-        self.image_canvas.bind("<ButtonPress-3>", self.start_resize_border)
-        self.image_canvas.bind("<B3-Motion>", self.resize_border)
-        self.image_canvas.bind("<ButtonRelease-3>", self.stop_resize_border)
+        self.define_drag_border()
 
+        # Thêm sự kiện chuột cho thay đổi kích thước border
+        self.define_resize_border()
+
+    ###  SETUP APP  ###
     def setup_left_column(self):
         self.left_column_frame = ttk.Frame(self.root, width=300, style="Left.TFrame")
         self.left_column_frame.grid(row=0, column=0, sticky="ns")
@@ -99,24 +102,12 @@ class ImageViewerApp:
     def setup_right_column(self):
         right_frame = ttk.Frame(self.root)
         self.right_frame = right_frame
-        self.drag_border_enabled = tk.BooleanVar()
         right_frame.grid(row=0, column=3, sticky="ns")
-
-        button_frame = ttk.Frame(right_frame)
-        button_frame.grid(row=0, column=0, pady=10)
-
-        toggle_drag_border_button = ttk.Checkbutton(
-            right_frame,
-            text="Drag Border",
-            command=self.toggle_drag_border,
-            variable=self.drag_border_enabled,
-            style="TCheckbutton",
-        )
-        toggle_drag_border_button.grid(row=5, column=0, pady=10)
 
         self.cropped_canvas = tk.Canvas(right_frame, bg="white", width=300, height=300)
         self.cropped_canvas.grid(row=10, column=0, pady=10)
 
+    ###  HELPER FUNCTION  ### 
     def get_next_color(self):
         # Lấy màu tiếp theo trong danh sách và cập nhật biến theo dõi
         if self.next_color_index >= len(self.used_colors):
@@ -191,7 +182,6 @@ class ImageViewerApp:
         label = ttk.Label(control_frame, text=control_set["label_text"])
         label.grid(row=0, column=3, padx=5)
 
-        # self.coordinates_var = tk.StringVar()
         entry = ttk.Entry(control_frame, textvariable=control_set["output_var"])
         entry.grid(row=1, column=0, columnspan=4, padx=5, pady=5)
 
@@ -224,6 +214,41 @@ class ImageViewerApp:
 
         self.load_image()  # Load the first image in the list by default
 
+    def define_resize_border(self):
+        self.image_canvas.bind("<ButtonPress-3>", self.start_resize_border)
+        self.image_canvas.bind("<B3-Motion>", self.resize_border)
+        self.image_canvas.bind("<ButtonRelease-3>", self.stop_resize_border)
+
+    def define_drag_border(self):
+        # Thêm sự kiện chuột cho di chuyển border
+        self.image_canvas.bind("<ButtonPress-1>", self.start_drag_image_and_border)
+        self.image_canvas.bind("<B1-Motion>", self.drag_image_and_border)
+        self.image_canvas.bind("<ButtonRelease-1>", self.stop_drag_image_and_border)
+
+    def is_near_top_edge(self, y_position, tolerance=8):
+        # Kiểm tra xem tọa độ chuột có gần cạnh trên không
+        top_edge_y = self.image_canvas.coords(self.border_rectangle)[1]
+        return abs(y_position - top_edge_y) <= tolerance
+
+    def is_near_bottom_edge(self, y_position, tolerance=8):
+        # Kiểm tra xem tọa độ chuột có gần cạnh dưới không
+        bottom_edge_y = self.image_canvas.coords(self.border_rectangle)[3]
+        return abs(y_position - bottom_edge_y) <= tolerance
+
+    def get_cropped_image(self, rect_coords):
+        image_width = self.image.width
+        image_height = self.image.height
+        if rect_coords:
+            x1, y1, x2, y2 = rect_coords
+            x1 = max(0, min(x1, image_width))
+            y1 = max(0, min(y1, image_height))
+            x2 = max(0, min(x2, image_width))
+            y2 = max(0, min(y2, image_height))
+
+            cropped_image = self.image.crop((x1, y1, x2, y2))
+            return cropped_image
+        
+    ###  RUN APP  ###
     def load_image(self, event=None):
         selected_index = self.file_listbox.curselection()
         if selected_index:
@@ -265,6 +290,7 @@ class ImageViewerApp:
             0, 50, border_width, border_height + 50, outline="red", width=3
         )
 
+    ###  RESIZE RED BORDER  ###
     def start_resize_border(self, event):
         # Lưu tọa độ chuột khi bắt đầu thay đổi kích thước
         self.start_drag_y = event.y
@@ -280,16 +306,6 @@ class ImageViewerApp:
             self.resizing_edge = "bottom"
         else:
             self.resizing_edge = None
-
-    def is_near_top_edge(self, y_position, tolerance=5):
-        # Kiểm tra xem tọa độ chuột có gần cạnh trên không
-        top_edge_y = self.image_canvas.coords(self.border_rectangle)[1]
-        return abs(y_position - top_edge_y) <= tolerance
-
-    def is_near_bottom_edge(self, y_position, tolerance=5):
-        # Kiểm tra xem tọa độ chuột có gần cạnh dưới không
-        bottom_edge_y = self.image_canvas.coords(self.border_rectangle)[3]
-        return abs(y_position - bottom_edge_y) <= tolerance
 
     def resize_border(self, event):
         if not self.resizing_edge:
@@ -318,31 +334,22 @@ class ImageViewerApp:
     def stop_resize_border(self, event):
         self.resizing_edge = None
 
-    def toggle_drag_border(self):
-        if self.drag_border_enabled.get():
-            # Thêm sự kiện chuột cho di chuyển border
-            self.image_canvas.bind("<ButtonPress-1>", self.start_drag_image_and_border)
-            self.image_canvas.bind("<B1-Motion>", self.drag_image_and_border)
-            self.image_canvas.bind("<ButtonRelease-1>", self.stop_drag_image_and_border)
-        else:
-            self.image_canvas.unbind("<ButtonPress-1>")
-            self.image_canvas.unbind("<B1-Motion>")
-            self.image_canvas.unbind("<ButtonRelease-1>")
-
+    ###  DRAG RED BORDER  ###
     def start_drag_image_and_border(self, event):
         # Lưu tọa độ chuột khi bắt đầu di chuyển
         self.start_drag_y = event.y
+        
         # Xác định cạnh được click (top, bottom)
         y_position = event.y
         if self.is_near_top_edge(y_position):
-            self.drag_enabled = True
+            self.drag_border_enabled = True
         elif self.is_near_bottom_edge(y_position):
-            self.drag_enabled = True
+            self.drag_border_enabled = True
         else:
-            self.drag_enabled = False
+            self.drag_border_enabled = False
 
     def drag_image_and_border(self, event):
-        if not self.drag_enabled:
+        if not self.drag_border_enabled:
             return
 
         # Tính toán sự chênh lệch trong tọa độ chuột
@@ -368,8 +375,9 @@ class ImageViewerApp:
     def stop_drag_image_and_border(self, event):
         # Dừng việc di chuyển khi nhả chuột
         self.start_drag_y = None
-        self.drag_enabled = False
+        self.drag_border_enabled = False
 
+    ###  DRAW RECTANGLE  ###
     def toggle_fixed_rect(self, control_set):
         pass
 
@@ -409,7 +417,7 @@ class ImageViewerApp:
         if not control_set["draw_var"]:
             return
 
-        self.drag_border_enabled.set(False)
+        self.drag_border_enabled = False
         self.reset_draw(control_set, draw_frame)
 
         rect_start_x = self.image_canvas.canvasx(event.x)
@@ -497,8 +505,8 @@ class ImageViewerApp:
             highlightbackground="white", highlightthickness=3, highlightcolor="white"
         )
         # set drag border
-        self.drag_border_enabled.set(True)
-        self.toggle_drag_border()
+        self.drag_border_enabled = True
+        self.define_drag_border()
 
     def reset_draw(self, control_set, draw_frame):
         if control_set.get("current_rect"):
@@ -514,19 +522,7 @@ class ImageViewerApp:
             )
             draw_frame.configure(highlightbackground="white")
 
-    def get_cropped_image(self, rect_coords):
-        image_width = self.image.width
-        image_height = self.image.height
-        if rect_coords:
-            x1, y1, x2, y2 = rect_coords
-            x1 = max(0, min(x1, image_width))
-            y1 = max(0, min(y1, image_height))
-            x2 = max(0, min(x2, image_width))
-            y2 = max(0, min(y2, image_height))
-
-            cropped_image = self.image.crop((x1, y1, x2, y2))
-            return cropped_image
-
+    ###  DROP IMAGE AND DISPLAY RECTANGLE INFOMATION  ###
     def display_cropped_image(self, control_set):
         cropped_photo = ImageTk.PhotoImage(control_set["cropped_image"])
 
@@ -548,9 +544,6 @@ class ImageViewerApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    # Set the initial theme
-    # root.tk.call("source", "sun-valley-theme/sun-valley.tcl")
-    # root.tk.call("set_theme", "light")
     import sv_ttk
 
     sv_ttk.use_light_theme()
