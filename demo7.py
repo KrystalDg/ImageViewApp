@@ -26,6 +26,7 @@ class ImageViewerApp:
         self.toggle_draw_inside = False
         self.fixed_rect = False
         self.draw_enabled = True
+        self.resizing_border = False
 
         # Thêm một bộ nút mới
         self.current_control_set = None
@@ -45,6 +46,11 @@ class ImageViewerApp:
         self.add_control_set("Set 1")
         self.add_control_set("Set 2")
         self.add_control_set("Set 3")
+
+        # Thêm sự kiện chuột cho thay đổi kích thước border
+        self.image_canvas.bind("<ButtonPress-3>", self.start_resize_border)
+        self.image_canvas.bind("<B3-Motion>", self.resize_border)
+        self.image_canvas.bind("<ButtonRelease-3>", self.stop_resize_border)
 
     def setup_left_column(self):
         self.left_column_frame = ttk.Frame(self.root, width=300, style="Left.TFrame")
@@ -125,9 +131,10 @@ class ImageViewerApp:
     def generate_random_color(self):
         # Tạo một màu ngẫu nhiên
         import random
+
         color = "#{:06x}".format(random.randint(0, 0xFFFFFF))
         return color
-    
+
     def add_control_set(self, label_text):
         color = self.get_next_color()
         control_set = {
@@ -138,6 +145,7 @@ class ImageViewerApp:
             "cropped_image": None,
             "current_rect": None,
             "fixed_rect": False,
+            "output_var":tk.StringVar(),
             "color": color,  # Sử dụng màu từ danh sách
             "style": ttk.Style(),
         }
@@ -158,7 +166,9 @@ class ImageViewerApp:
         fix_checkbox.grid(row=0, column=0, padx=5)
 
         # Thêm một Frame cho mỗi control_set
-        draw_frame = tk.Frame(control_frame, highlightbackground="white", highlightthickness=3)
+        draw_frame = tk.Frame(
+            control_frame, highlightbackground="white", highlightthickness=3
+        )
         draw_frame.grid(row=0, column=1, padx=5)
 
         draw_button = ttk.Button(
@@ -182,8 +192,8 @@ class ImageViewerApp:
         label = ttk.Label(control_frame, text=control_set["label_text"])
         label.grid(row=0, column=3, padx=5)
 
-        self.coordinates_var = tk.StringVar()
-        entry = ttk.Entry(control_frame, textvariable=self.coordinates_var)
+        # self.coordinates_var = tk.StringVar()
+        entry = ttk.Entry(control_frame, textvariable=control_set["output_var"])
         entry.grid(row=1, column=0, columnspan=4, padx=5, pady=5)
 
         get_position_button = ttk.Button(
@@ -264,10 +274,15 @@ class ImageViewerApp:
             self.image_canvas.bind("<ButtonPress-1>", self.start_drag_image_and_border)
             self.image_canvas.bind("<B1-Motion>", self.drag_image_and_border)
             self.image_canvas.bind("<ButtonRelease-1>", self.stop_drag_image_and_border)
+            
         else:
             self.image_canvas.unbind("<ButtonPress-1>")
             self.image_canvas.unbind("<B1-Motion>")
             self.image_canvas.unbind("<ButtonRelease-1>")
+            # # Loại bỏ sự kiện chuột thay đổi kích thước border
+            # self.image_canvas.unbind("<ButtonPress-3>")
+            # self.image_canvas.unbind("<B3-Motion>")
+            # self.image_canvas.unbind("<ButtonRelease-3>")
 
     def start_drag_image_and_border(self, event):
         # Lưu tọa độ chuột khi bắt đầu di chuyển
@@ -284,17 +299,50 @@ class ImageViewerApp:
         # Di chuyển border màu đỏ theo cạnh đó
         self.move_border(y_delta)
 
+    def move_border(self, y_delta):
+        self.image_canvas.move(self.border_rectangle, 0, y_delta)
+        for control_set in self.control_sets:
+            if control_set["fix_var"].get() and control_set.get("current_rect"):
+                self.image_canvas.move(control_set["current_rect"], 0, y_delta)
+                rect_coords = self.image_canvas.coords(control_set["current_rect"])
+                control_set["rect_coords"] = [
+                    rect_coords[0],
+                    rect_coords[1] + y_delta,
+                    rect_coords[2],
+                    rect_coords[3] + y_delta,
+                ]
+        
     def stop_drag_image_and_border(self, event):
         # Dừng việc di chuyển khi nhả chuột
         self.start_drag_y = None
 
-    def move_border(self, y_delta):
-        for control_set in self.control_sets:
-            if control_set["fix_var"].get() and control_set.get("current_rect"):
-                self.image_canvas.move(control_set["current_rect"], 0, y_delta)
+    def start_resize_border(self, event):
+        self.resizing_border = True
+        self.start_drag_y = event.y
+        print(self.image_canvas.coords(self.border_rectangle))
 
-        # Di chuyển border màu đỏ theo cạnh đó
-        self.image_canvas.move(self.border_rectangle, 0, y_delta)
+    def resize_border(self, event):
+        if not self.resizing_border:
+            return
+
+        # Tính toán sự chênh lệch trong tọa độ chuột
+        y_delta = event.y - self.start_drag_y
+        self.start_drag_y = event.y
+
+        # Thay đổi kích thước border màu đỏ theo chiều dọc
+        self.resize_border_height(y_delta)
+
+    def stop_resize_border(self, event):
+        self.resizing_border = False
+
+    def resize_border_height(self, y_delta):
+        current_height = self.image_canvas.coords(self.border_rectangle)[3] - self.image_canvas.coords(self.border_rectangle)[1]
+        new_height = current_height + y_delta
+        if new_height < 10:  # Giới hạn kích thước tối thiểu
+            new_height = 10
+
+        self.current_border_height_ratio = new_height / self.image_canvas.winfo_height()
+        self.create_border_rectangle()
 
     def toggle_fixed_rect(self, control_set):
         pass
@@ -304,17 +352,31 @@ class ImageViewerApp:
 
         if control_set["draw_var"]:
             self.current_control_set = control_set
-            self.image_canvas.bind("<ButtonPress-1>", lambda event: self.start_drawing_rect(event, draw_frame))
+            self.image_canvas.bind(
+                "<ButtonPress-1>",
+                lambda event: self.start_drawing_rect(event, draw_frame),
+            )
             self.image_canvas.bind("<B1-Motion>", self.drag_rect)
-            self.image_canvas.bind("<ButtonRelease-1>", lambda event: self.stop_drawing_rect(event, draw_frame))
+            self.image_canvas.bind(
+                "<ButtonRelease-1>",
+                lambda event: self.stop_drawing_rect(event, draw_frame),
+            )
             # Cập nhật màu nền của Frame
-            draw_frame.configure(highlightbackground=control_set["color"], highlightthickness=3, highlightcolor=control_set["color"])
+            draw_frame.configure(
+                highlightbackground=control_set["color"],
+                highlightthickness=3,
+                highlightcolor=control_set["color"],
+            )
         else:
             self.image_canvas.unbind("<ButtonPress-1>")
             self.image_canvas.unbind("<B1-Motion>")
             self.image_canvas.unbind("<ButtonRelease-1>")
             # Cập nhật màu nền của Frame
-            draw_frame.configure(highlightbackground="white", highlightthickness=3, highlightcolor="white")
+            draw_frame.configure(
+                highlightbackground="white",
+                highlightthickness=3,
+                highlightcolor="white",
+            )
 
     def start_drawing_rect(self, event, draw_frame):
         control_set = self.current_control_set
@@ -342,7 +404,7 @@ class ImageViewerApp:
             outline=control_set["color"],
             width=2,
         )
-        
+
     def drag_rect(self, event):
         control_set = self.current_control_set
         if not control_set["draw_var"]:
@@ -382,20 +444,12 @@ class ImageViewerApp:
         canvas_x = self.image_canvas.canvasx(event.x)
         canvas_y = self.image_canvas.canvasy(event.y)
 
-        if control_set["fix_var"].get():
-            real_rect_coords = (
-                min(control_set["rect_coords"][0], canvas_x),
-                min(control_set["rect_coords"][1], canvas_y),
-                max(control_set["rect_coords"][2], canvas_x),
-                max(control_set["rect_coords"][3], canvas_y),
-            )
-        else:
-            real_rect_coords = (
-                min(control_set["rect_coords"][0], canvas_x),
-                min(control_set["rect_coords"][1], canvas_y),
-                max(control_set["rect_coords"][2], canvas_x),
-                max(control_set["rect_coords"][3], canvas_y),
-            )
+        real_rect_coords = (
+            min(control_set["rect_coords"][0], canvas_x),
+            min(control_set["rect_coords"][1], canvas_y),
+            max(control_set["rect_coords"][2], canvas_x),
+            max(control_set["rect_coords"][3], canvas_y),
+        )
 
         self.image_canvas.coords(
             control_set["current_rect"],
@@ -413,7 +467,9 @@ class ImageViewerApp:
         control_set["style"].configure(
             f"{control_set['label_text']}.TButton", foreground=control_set["color"]
         )
-        draw_frame.configure(highlightbackground="white", highlightthickness=3, highlightcolor="white")
+        draw_frame.configure(
+            highlightbackground="white", highlightthickness=3, highlightcolor="white"
+        )
         # set drag border
         self.drag_border_enabled.set(True)
         self.toggle_drag_border()
@@ -425,51 +481,43 @@ class ImageViewerApp:
             control_set["rect_coords"] = None
             if not control_set["draw_var"]:
                 control_set["fix_var"].set(False)
-            self.reset_coordinates_input()
+            self.reset_coordinates_input(control_set)
 
             control_set["style"].configure(
                 f"{control_set['label_text']}.TButton", foreground="black"
             )
             draw_frame.configure(highlightbackground="white")
 
-    def update_coordinates_input(self, coords):
-        self.coordinates_var.set(
-            f"({int(coords[0])}, {int(coords[1])}, {int(coords[2])}, {int(coords[3])})"
-        )
-
-    def reset_coordinates_input(self):
-        self.coordinates_var.set("")
-
-    def update_rectangle_position(self, control_set):
-        rect_coords = control_set["rect_coords"]
-        self.coordinates_var.set(
-            f"({int(rect_coords[0])}, {int(rect_coords[1])}, {int(rect_coords[2])}, {int(rect_coords[3])})"
-        )
-
-        cropped_image = self.get_cropped_image(rect_coords)
-        self.display_cropped_image(cropped_image, control_set)
-
     def get_cropped_image(self, rect_coords):
         image_width = self.image.width
         image_height = self.image.height
+        if rect_coords:
+            x1, y1, x2, y2 = rect_coords
+            x1 = max(0, min(x1, image_width))
+            y1 = max(0, min(y1, image_height))
+            x2 = max(0, min(x2, image_width))
+            y2 = max(0, min(y2, image_height))
 
-        x1, y1, x2, y2 = rect_coords
-        x1 = max(0, min(x1, image_width))
-        y1 = max(0, min(y1, image_height))
-        x2 = max(0, min(x2, image_width))
-        y2 = max(0, min(y2, image_height))
+            cropped_image = self.image.crop((x1, y1, x2, y2))
+            return cropped_image
 
-        cropped_image = self.image.crop((x1, y1, x2, y2))
-        return cropped_image
+    def display_cropped_image(self, control_set):
+        cropped_photo = ImageTk.PhotoImage(control_set["cropped_image"])
 
-    def display_cropped_image(self, cropped_image, control_set):
-        cropped_photo = ImageTk.PhotoImage(cropped_image)
-        self.cropped_canvas.config(
-            width=cropped_image.width, height=cropped_image.height
-        )
         self.cropped_canvas.create_image(0, 0, anchor=tk.NW, image=cropped_photo)
         self.cropped_canvas.image = cropped_photo
 
+    def reset_coordinates_input(self, control_set):
+        control_set["output_var"].set("")
+
+    def update_rectangle_position(self, control_set):
+        rect_coords = control_set["rect_coords"]
+        if rect_coords:
+            control_set["output_var"].set(
+                f"({int(rect_coords[0])}, {int(rect_coords[1])}, {int(rect_coords[2])}, {int(rect_coords[3])})"
+            )
+            control_set["cropped_image"] = self.get_cropped_image(rect_coords)
+            self.display_cropped_image(control_set)
 
 
 if __name__ == "__main__":
@@ -478,6 +526,7 @@ if __name__ == "__main__":
     # root.tk.call("source", "sun-valley-theme/sun-valley.tcl")
     # root.tk.call("set_theme", "light")
     import sv_ttk
+
     sv_ttk.use_light_theme()
 
     app = ImageViewerApp(root)
