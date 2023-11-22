@@ -2,7 +2,15 @@ import os
 import tkinter as tk
 from tkinter import filedialog, ttk
 
+import cv2
+import numpy as np
 from PIL import Image, ImageTk
+
+from database.database import *
+from model.model import *
+
+# Establish a connection to the MySQL database
+conn, cursor = initialize_connection()
 
 
 class ImageViewerApp:
@@ -42,28 +50,20 @@ class ImageViewerApp:
         self.setup_image_display()
         self.setup_right_column()
 
-        # Thêm một bộ nút mới
-        headers = [
-            "id",
-            "firstName",
-            "lastName",
-            "password",
-            "email",
-            "gender",
-            "age",
-            "address",
-        ]
+        headers = get_table_header(cursor)
         for header in headers:
-            self.add_control_set(header)
-        self.add_control_set("Set 1")
-        self.add_control_set("Set 2")
-        self.add_control_set("Set 3")
+            if header != "id":
+                self.add_control_set(header)
 
-        # Thêm sự kiện chuột cho di chuyển border
+        # Thêm sự kiện chuột cho thay đổi kích thước border
         self.define_drag_border()
 
         # Thêm sự kiện chuột cho thay đổi kích thước border
         self.define_resize_border()
+
+        path = "model/train1.hdf5"
+        self.ocr = CRNN_Model(path)
+        self.ocr.build_model()
 
     ###  SETUP APP  ###
     def setup_left_column(self):
@@ -173,12 +173,18 @@ class ImageViewerApp:
         button_frame.grid(row=0, column=0, pady=10)
 
         recognize_button = ttk.Button(
-            button_frame, text="Recognize", command="", style="TButton"
+            button_frame,
+            text="Recognize",
+            command=self.recognize_all_entries,
+            style="TButton",
         )
         recognize_button.grid(row=0, column=1, padx=5, pady=5)
 
         submit_button = ttk.Button(
-            button_frame, text="Submit", command="", style="TButton"
+            button_frame,
+            text="Submit",
+            command=self.submit_all_entries,
+            style="TButton",
         )
         submit_button.grid(row=0, column=0, padx=5, pady=5)
 
@@ -268,7 +274,7 @@ class ImageViewerApp:
                 "end",
                 text=os.path.basename(node_path),
                 values=(node_path, "folder"),
-                open=True
+                open=True,
             )
         else:
             node = self.treeview.insert(
@@ -287,7 +293,7 @@ class ImageViewerApp:
                         node, "end", text=item, values=(item_path, "file")
                     )
 
-    def treeview_item_selected(self):
+    def treeview_item_selected(self, event):
         item_id = self.treeview.selection()
         if item_id:
             item_type = self.treeview.item(item_id, "values")[1]
@@ -485,7 +491,7 @@ class ImageViewerApp:
                     rect_coords[3] + y_delta,
                 ]
 
-    def stop_drag_image_and_border(self):
+    def stop_drag_image_and_border(self, event):
         # Dừng việc di chuyển khi nhả chuột
         self.start_drag_y = None
         self.drag_border_enabled = False
@@ -637,8 +643,9 @@ class ImageViewerApp:
 
     ###  DROP IMAGE AND DISPLAY RECTANGLE INFOMATION  ###
     def display_cropped_image(self, control_set):
+        # img = cv2.cvtColor(np.array(control_set["cropped_image"]), cv2.COLOR_RGB2GRAY)
+        # cv2.imwrite("./"+"fileName.png", img);
         cropped_photo = ImageTk.PhotoImage(control_set["cropped_image"])
-
         self.cropped_canvas.create_image(0, 0, anchor=tk.NW, image=cropped_photo)
         self.cropped_canvas.image = cropped_photo
 
@@ -653,6 +660,30 @@ class ImageViewerApp:
             )
             control_set["cropped_image"] = self.get_cropped_image(rect_coords)
             self.display_cropped_image(control_set)
+
+    def recognize_all_entries(self):
+        for control_set in self.control_sets:
+            if control_set.get("cropped_image"):
+                info = self.ocr.recognize(control_set["cropped_image"])
+                control_set["output_var"].set(info)
+
+    def submit_all_entries(self):
+        # Create lists to store column names and values
+        columns = []
+        values = []
+
+        for control_set in self.control_sets:
+            columns.append(control_set["label_text"])
+            values.append(control_set["output_var"].get())
+            control_set["output_var"].set("")
+
+        # Join the lists into a comma-separated string for the query
+        columns_str = ", ".join(columns)
+        values_str = ", ".join(f"'{value}'" for value in values)
+        submit(conn, cursor, columns_str, values_str)
+        border_coords = self.image_canvas.coords(self.border_rectangle)
+        y_delta = border_coords[3] - border_coords[1]
+        self.move_border(y_delta)
 
 
 if __name__ == "__main__":
