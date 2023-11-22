@@ -2,13 +2,28 @@ import mysql.connector
 
 
 def initialize_connection():
-    conn = mysql.connector.connect(host="localhost", user="root", password="db1963")
+    conn=None
+    isConnect = False
+    try:
+        # Kết nối đến cơ sở dữ liệu MySQL
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="minh",
+            database="lvtn_hk231"
+        )
 
-    cursor = conn.cursor()
-    create_database(cursor)
-    create_table(cursor)
+        isConnect = True
+        print('Connected')
+    except:
+        print('Error')
 
-    return conn, cursor
+    if isConnect:
+        cursor = conn.cursor()
+        create_database(cursor)
+        create_table(cursor)
+
+        return conn, cursor
 
 
 def create_database(cursor):
@@ -16,10 +31,10 @@ def create_database(cursor):
     temp = cursor.fetchall()
     databases = [item[0] for item in temp]
 
-    if "lvtn231" not in databases:
-        cursor.execute("CREATE DATABASE tutorial")
+    if "lvtn_hk231" not in databases:
+        cursor.execute("CREATE DATABASE lvtn_hk231")
 
-    cursor.execute("USE tutorial")
+    cursor.execute("USE lvtn_hk231")
 
 
 def create_table(cursor):
@@ -27,16 +42,19 @@ def create_table(cursor):
     temp = cursor.fetchall()
     tables = [item[0] for item in temp]
 
-    if "users" not in tables:
+    if "person_infomation" not in tables:
         cursor.execute(
-            """CREATE TABLE users(
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            firstName VARCHAR(100),
-            lastName VARCHAR(100),
-            password VARCHAR(30),
-            email VARCHAR(100) UNIQUE,
-            gender VARCHAR(1),
-            age INT,
-            address VARCHAR(200)
-         )"""
+            """CREATE TABLE person_infomation(
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                firstName VARCHAR(100),
+                lastName VARCHAR(100),
+                password VARCHAR(30),
+                email VARCHAR(100) UNIQUE,
+                gender VARCHAR(1),
+                age INT,
+                address VARCHAR(200)
+            )"""
         )
+
+
+initialize_connection()

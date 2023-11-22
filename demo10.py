@@ -59,7 +59,7 @@ class ImageViewerApp:
         self.add_control_set("Set 2")
         self.add_control_set("Set 3")
 
-        # Thêm sự kiện chuột cho thay đổi kích thước border
+        # Thêm sự kiện chuột cho di chuyển border
         self.define_drag_border()
 
         # Thêm sự kiện chuột cho thay đổi kích thước border
@@ -78,29 +78,33 @@ class ImageViewerApp:
         )
         browse_button.grid(row=0, column=0, pady=10)
 
-        # Sử dụng ttk.Treeview thay cho Listbox
-        self.file_tree = ttk.Treeview(
-            self.left_column_frame,
-            selectmode="browse",
-            columns=("File Name",),
-            show="headings",
-            height=44,
-            style="Treeview",
+        treeview_frame = ttk.Frame(self.left_column_frame, width=300)
+        treeview_frame.grid(row=1, column=0, sticky="nsew")
+
+        # Thêm Treeview
+        self.treeview = ttk.Treeview(
+            treeview_frame, columns=("name",), height=30, show="tree"
         )
+        self.treeview.grid(row=0, column=0, sticky="nsew")
 
-        # Đặt tiêu đề cho cột
-        self.file_tree.heading("File Name", text="File Name")
+        self.treeview.heading("#0", text="File Explorer", anchor=tk.W)
+        self.treeview.heading("name", text="Name", anchor=tk.W)
+        self.treeview.column("#0", width=220)
+        self.treeview.column("name", width=0, minwidth=0)
 
-        # Thiết lập sự kiện khi chọn một hàng trong Treeview
-        self.file_tree.bind("<ButtonRelease-1>", self.load_image)
+        # Thêm scrollbar cho Treeview
+        treeview_scrollbar = ttk.Scrollbar(
+            treeview_frame, orient="vertical", command=self.treeview.yview
+        )
+        treeview_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.treeview.configure(yscroll=treeview_scrollbar.set)
 
-        # Thiết lập thanh cuộn cho Treeview
-        tree_scrollbar = ttk.Scrollbar(self.left_column_frame, orient="vertical", command=self.file_tree.yview)
-        tree_scrollbar.grid(row=1, column=1, sticky="ns")
-        self.file_tree.configure(yscrollcommand=tree_scrollbar.set)
+        # Thiết lập sự kiện khi chọn một dòng trong Treeview
+        self.treeview.bind("<ButtonRelease-1>", self.treeview_item_selected)
 
-        self.file_tree.grid(row=1, column=0, padx=10, pady=10)
-        self.populate_file_tree()
+        # Mở thư mục mặc định
+        default_folder_path = "/home/krystal/LearnSpace/LVTN/GUI/test"
+        self.populate_treeview(default_folder_path)
 
     def setup_image_display(self):
         self.image_canvas = tk.Canvas(
@@ -253,30 +257,48 @@ class ImageViewerApp:
         )
         # get_position_button.grid(row=2, column=0, columnspan=4, pady=10, sticky="w")
 
-    def populate_file_tree(self, folder_path=None):
-        if folder_path is None:
-            folder_path = "/home/krystal/LearnSpace/LVTN/GUI/test"
+    def populate_treeview(self, folder_path):
+        self.treeview.delete(*self.treeview.get_children())
+        self.add_treeview_node("", folder_path, isRoot=True)
 
-        self.file_tree.delete(*self.file_tree.get_children())
-        file_list = [
-            f
-            for f in os.listdir(folder_path)
-            if os.path.isfile(os.path.join(folder_path, f))
-        ]
+    def add_treeview_node(self, parent, node_path, isRoot=False):
+        if isRoot:
+            node = self.treeview.insert(
+                parent,
+                "end",
+                text=os.path.basename(node_path),
+                values=(node_path, "folder"),
+                open=True
+            )
+        else:
+            node = self.treeview.insert(
+                parent,
+                "end",
+                text=os.path.basename(node_path),
+                values=(node_path, "folder"),
+            )
+        if os.path.isdir(node_path):
+            for item in os.listdir(node_path):
+                item_path = os.path.join(node_path, item)
+                if os.path.isdir(item_path):
+                    self.add_treeview_node(node, item_path)
+                else:
+                    self.treeview.insert(
+                        node, "end", text=item, values=(item_path, "file")
+                    )
 
-        for file in file_list:
-            self.file_tree.insert("", "end", values=(file,))
+    def treeview_item_selected(self):
+        item_id = self.treeview.selection()
+        if item_id:
+            item_type = self.treeview.item(item_id, "values")[1]
+            if item_type == "file":
+                file_path = self.treeview.item(item_id, "values")[0]
+                self.load_image(file_path)
 
     def select_folder(self):
         folder_path = filedialog.askdirectory()
         if folder_path:
-            self.populate_treeview("", folder_path)
-
-    def tree_item_selected(self, event):
-        selected_item = self.tree.selection()
-        if selected_item:
-            folder_path = self.tree.item(selected_item)["values"][0]
-            self.populate_tree(folder_path)
+            self.populate_treeview(folder_path)
 
     def define_resize_border(self):
         self.image_canvas.bind("<ButtonPress-3>", self.start_resize_border)
@@ -330,21 +352,16 @@ class ImageViewerApp:
             return cropped_image
 
     ###  RUN APP  ###
-    def load_image(self, event):
-        selected_item = self.file_tree.selection()
-        if selected_item:
-            selected_file = self.file_tree.item(selected_item, "values")[0]
-            self.current_image_path = os.path.join(
-                "/home/krystal/LearnSpace/LVTN/GUI/test", selected_file
-            )
-            self.display_image(self.current_image_path)
+    def load_image(self, image_path):
+        self.current_image_path = image_path
+        self.display_image(self.current_image_path)
 
     def display_image(self, image_path):
+        self.current_image_path = image_path
         self.image = Image.open(image_path)
         aspect_ratio = self.image.width / self.image.height
-        new_height = int(self.image_canvas.winfo_height() * 0.6)
+        new_height = int(self.image_canvas.winfo_height())
         new_width = int(new_height * aspect_ratio)
-        self.image = Image.open(image_path)
         self.image = self.image.resize((new_width, new_height))
         self.photo = ImageTk.PhotoImage(self.image)
 
@@ -427,7 +444,7 @@ class ImageViewerApp:
             new_bottom_y,
         )
 
-    def stop_resize_border(self, event):
+    def stop_resize_border(self):
         self.resizing_edge = None
 
     ###  DRAG RED BORDER  ###
@@ -468,7 +485,7 @@ class ImageViewerApp:
                     rect_coords[3] + y_delta,
                 ]
 
-    def stop_drag_image_and_border(self, event):
+    def stop_drag_image_and_border(self):
         # Dừng việc di chuyển khi nhả chuột
         self.start_drag_y = None
         self.drag_border_enabled = False
