@@ -1,13 +1,13 @@
 import os
 import tkinter as tk
 from tkinter import filedialog, ttk
+from tkinter.messagebox import showerror, showinfo, showwarning
 
-import cv2
-import numpy as np
+import fitz  # PyMuPDF
 from PIL import Image, ImageTk
 
 from database.database import *
-from model.model import *
+from vietocr_model.vietocr import *
 
 # Establish a connection to the MySQL database
 conn, cursor = initialize_connection()
@@ -15,7 +15,9 @@ conn, cursor = initialize_connection()
 
 class ImageViewerApp:
     ###  INIT FUNCTION  ###
+
     def __init__(self, root):
+        root.config(cursor="left_ptr")
         self.root = root
         self.root.title("Image Viewer")
         self.root.geometry("1920x1080")
@@ -44,6 +46,9 @@ class ImageViewerApp:
 
         self.used_colors = []  # Danh sách các màu đã sử dụng
         self.next_color_index = 0  # Biến để theo dõi màu tiếp theo
+        # Add a variable to store the current PDF document
+        self.pdf_document = None
+        self.current_page = 0
 
         # Set GUI
         self.setup_left_column()
@@ -61,11 +66,10 @@ class ImageViewerApp:
         # Thêm sự kiện chuột cho thay đổi kích thước border
         self.define_resize_border()
 
-        path = "model/train1.hdf5"
-        self.ocr = CRNN_Model(path)
-        self.ocr.build_model()
+        self.ocr = OCRModel()
 
     ###  SETUP APP  ###
+
     def setup_left_column(self):
         self.left_column_frame = ttk.Frame(self.root, width=300, style="Left.TFrame")
         self.left_column_frame.grid(row=0, column=0, sticky="ns")
@@ -75,6 +79,7 @@ class ImageViewerApp:
             text="Chọn Thư Mục",
             command=self.select_folder,
             style="TButton",
+            cursor="hand1",
         )
         browse_button.grid(row=0, column=0, pady=10)
 
@@ -89,12 +94,15 @@ class ImageViewerApp:
 
         self.treeview.heading("#0", text="File Explorer", anchor=tk.W)
         self.treeview.heading("name", text="Name", anchor=tk.W)
-        self.treeview.column("#0", width=220)
+        self.treeview.column("#0", width=250)
         self.treeview.column("name", width=0, minwidth=0)
 
         # Thêm scrollbar cho Treeview
         treeview_scrollbar = ttk.Scrollbar(
-            treeview_frame, orient="vertical", command=self.treeview.yview
+            treeview_frame,
+            orient="vertical",
+            command=self.treeview.yview,
+            cursor="hand1",
         )
         treeview_scrollbar.grid(row=0, column=1, sticky="ns")
         self.treeview.configure(yscroll=treeview_scrollbar.set)
@@ -107,24 +115,58 @@ class ImageViewerApp:
         self.populate_treeview(default_folder_path)
 
     def setup_image_display(self):
+        self.image_column_frame = ttk.Frame(self.root, width=1200, style="")
+        self.image_column_frame.grid(row=0, column=1, sticky="nsew")
+
         self.image_canvas = tk.Canvas(
-            self.root, bg="white", width=1290, height=900, scrollregion=(0, 0, 0, 0)
+            self.image_column_frame,
+            bg="white",
+            width=1260,
+            height=900,
+            scrollregion=(0, 0, 0, 0),
         )
-        self.image_canvas.grid(row=0, column=1, padx=10, pady=20, sticky="nsew")
+        self.image_canvas.grid(row=0, column=0, padx=10, pady=20, sticky="nsew")
 
         h_scrollbar = ttk.Scrollbar(
-            self.root, orient="horizontal", command=self.image_canvas.xview
+            self.image_column_frame,
+            orient="horizontal",
+            command=self.image_canvas.xview,
+            cursor="hand1",
         )
-        h_scrollbar.grid(row=0, column=1, sticky="ewn")
+        h_scrollbar.grid(row=0, column=0, sticky="ewn")
 
-        v_scrollbar = ttk.Scrollbar(
-            self.root, orient="vertical", command=self.image_canvas.yview
-        )
-        v_scrollbar.grid(row=0, column=1, sticky="nse")
+        # v_scrollbar = ttk.Scrollbar(
+        #     self.image_column_frame, orient="vertical", command=self.image_canvas.yview
+        # )
+        # v_scrollbar.grid(row=0, column=0, sticky="nse")
 
         self.image_canvas.config(
-            xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set
+            xscrollcommand=h_scrollbar.set,
+            # yscrollcommand=v_scrollbar.set
         )
+        # Add buttons for navigating PDF pages
+        self.page_button_frame = ttk.Frame(
+            self.image_column_frame, width=1200, style=""
+        )
+        self.page_button_frame.grid(row=1, column=0, sticky="sew")
+
+        prev_page_button = ttk.Button(
+            self.page_button_frame,
+            text="Previous Page",
+            command=self.show_previous_page,
+            style="TButton",
+            cursor="hand1",
+        )
+        prev_page_button.grid(row=0, column=0, padx=5, pady=5)
+
+        next_page_button = ttk.Button(
+            self.page_button_frame,
+            text="Next Page",
+            command=self.show_next_page,
+            style="TButton",
+            cursor="hand1",
+        )
+        next_page_button.grid(row=0, column=1, padx=5, pady=5)
 
     def setup_right_column(self):
         right_frame = ttk.Frame(self.root)
@@ -143,11 +185,11 @@ class ImageViewerApp:
 
         # Thêm thanh cuộn dọc
         v_scrollbar = ttk.Scrollbar(
-            right_frame, orient="vertical", command=canvas.yview
+            right_frame, orient="vertical", command=canvas.yview, cursor="hand1"
         )
         v_scrollbar.grid(row=1, column=3, sticky="nse")
         canvas.config(yscrollcommand=v_scrollbar.set)
-        canvas.bind_all(
+        canvas.bind(
             "<MouseWheel>",
             lambda event: canvas.yview_scroll(int(-1 * (event.delta / 120)), "units"),
         )
@@ -156,8 +198,8 @@ class ImageViewerApp:
         self.control_container = tk.Frame(canvas)
         canvas.create_window((0, 0), window=self.control_container, anchor="nw")
 
-        self.cropped_canvas = tk.Canvas(right_frame, bg="white", width=300, height=100)
-        self.cropped_canvas.grid(row=2, column=0, pady=0)
+        # self.cropped_canvas = tk.Canvas(right_frame, bg="white", width=300, height=100)
+        # self.cropped_canvas.grid(row=2, column=0, pady=0)
 
         # Thiết lập thanh cuộn dọc cho Frame chứa các control_set
         self.control_container.update_idletasks()  # Cập nhật geometry trước khi thiết lập cuộn
@@ -177,6 +219,7 @@ class ImageViewerApp:
             text="Recognize",
             command=self.recognize_all_entries,
             style="TButton",
+            cursor="hand1",
         )
         recognize_button.grid(row=0, column=1, padx=5, pady=5)
 
@@ -185,10 +228,12 @@ class ImageViewerApp:
             text="Submit",
             command=self.submit_all_entries,
             style="TButton",
+            cursor="hand1",
         )
         submit_button.grid(row=0, column=0, padx=5, pady=5)
 
     ###  HELPER FUNCTION  ###
+
     def add_control_set(self, label_text):
         color = self.get_next_color()
         control_set = {
@@ -224,6 +269,7 @@ class ImageViewerApp:
             variable=control_set["fix_var"],
             command=self.toggle_fixed_rect(control_set),
             style="TCheckbutton",
+            cursor="hand1",
         )
         fix_checkbox.grid(row=0, column=0, padx=5, sticky="w")
 
@@ -238,6 +284,7 @@ class ImageViewerApp:
             text="❖",
             command=lambda: self.toggle_draw_inside_rect(control_set, draw_frame),
             style=f"{control_set['label_text']}.TButton",
+            cursor="hand1",
         )
         draw_button.grid(row=0, column=0, sticky="w")
 
@@ -246,6 +293,7 @@ class ImageViewerApp:
             text="✘",
             command=lambda: self.reset_draw(control_set, draw_frame),
             style="TButton",
+            cursor="hand1",
         )
         reset_draw_button.grid(row=0, column=2, padx=5)
 
@@ -255,12 +303,12 @@ class ImageViewerApp:
         entry = ttk.Entry(entry_frame, textvariable=control_set["output_var"], width=30)
         entry.grid(row=1, column=0, sticky="we")
 
-        get_position_button = ttk.Button(
-            button_frame,
-            text="Get Rectangle Position",
-            command=lambda: self.update_rectangle_position(control_set),
-            style="TButton",
-        )
+        # get_position_button = ttk.Button(
+        #     button_frame,
+        #     text="Get Rectangle Position",
+        #     command=lambda: self.update_rectangle_position(control_set),
+        #     style="TButton",
+        # )
         # get_position_button.grid(row=2, column=0, columnspan=4, pady=10, sticky="w")
 
     def populate_treeview(self, folder_path):
@@ -299,7 +347,12 @@ class ImageViewerApp:
             item_type = self.treeview.item(item_id, "values")[1]
             if item_type == "file":
                 file_path = self.treeview.item(item_id, "values")[0]
-                self.load_image(file_path)
+                if ".pdf" in file_path:
+                    self.load_pdf(file_path)
+                elif any(x in file_path for x in [".png", ".jpg", ".jpeg"]):
+                    self.load_image(file_path)
+                else:
+                    showerror(title="Error", message="Please choose image or PDF file.")
 
     def select_folder(self):
         folder_path = filedialog.askdirectory()
@@ -358,6 +411,7 @@ class ImageViewerApp:
             return cropped_image
 
     ###  RUN APP  ###
+
     def load_image(self, image_path):
         self.current_image_path = image_path
         self.display_image(self.current_image_path)
@@ -394,7 +448,57 @@ class ImageViewerApp:
             0, 50, border_width, border_height + 50, outline="red", width=3
         )
 
+    def load_pdf(self, pdf_path):
+        # Load PDF document using PyMuPDF
+        self.pdf_document = fitz.open(pdf_path)
+        self.current_page = 0
+        self.show_current_page()
+
+    def show_current_page(self):
+        # Display the current page of the PDF
+        if self.pdf_document:
+            pdf_page = self.pdf_document[self.current_page]
+            pixmap = pdf_page.get_pixmap()
+            image = self.pixmap_to_pil_image(pixmap)
+            self.display_image_from_pixmap(image)
+
+    def pixmap_to_pil_image(self, pixmap):
+        # Convert PyMuPDF Pixmap to PIL Image
+        img = Image.frombytes("RGB", [pixmap.width, pixmap.height], pixmap.samples)
+        return img
+
+    def show_previous_page(self):
+        # Show the previous page of the PDF
+        if self.pdf_document and self.current_page > 0:
+            self.current_page -= 1
+            self.show_current_page()
+
+    def show_next_page(self):
+        # Show the next page of the PDF
+        if self.pdf_document and self.current_page < len(self.pdf_document) - 1:
+            self.current_page += 1
+            self.show_current_page()
+
+    def display_image_from_pixmap(self, image):
+        # Display the image on the Canvas
+        if image:
+            aspect_ratio = image.width / image.height
+            new_height = int(self.image_canvas.winfo_height())
+            new_width = int(new_height * aspect_ratio)
+            self.image = image.resize((new_width, new_height))
+            self.photo = ImageTk.PhotoImage(self.image)
+
+            # Update the Canvas
+            self.image_canvas.config(scrollregion=(0, 0, new_width, new_height))
+            self.image_canvas.delete("all")
+            image_label = self.image_canvas.create_image(
+                0, 0, anchor=tk.NW, image=self.photo
+            )
+
+            self.create_border_rectangle()
+
     ###  RESIZE RED BORDER  ###
+
     def start_resize_border(self, event):
         # Lưu tọa độ chuột khi bắt đầu thay đổi kích thước
         self.start_drag_y = event.y
@@ -421,8 +525,10 @@ class ImageViewerApp:
 
         # Thay đổi kích thước border tùy thuộc vào cạnh được click
         if self.resizing_edge == "top":
+            root.config(cursor="sb_v_double_arrow")
             self.resize_top_border(y_delta)
         elif self.resizing_edge == "bottom":
+            root.config(cursor="sb_v_double_arrow")
             self.resize_bottom_border(y_delta)
 
     def resize_top_border(self, y_delta):
@@ -450,10 +556,12 @@ class ImageViewerApp:
             new_bottom_y,
         )
 
-    def stop_resize_border(self):
+    def stop_resize_border(self, event):
+        root.config(cursor="left_ptr")
         self.resizing_edge = None
 
     ###  DRAG RED BORDER  ###
+
     def start_drag_image_and_border(self, event):
         # Lưu tọa độ chuột khi bắt đầu di chuyển
         self.start_drag_y = event.y
@@ -462,8 +570,10 @@ class ImageViewerApp:
         y_position = event.y
         if self.is_near_top_edge(y_position):
             self.drag_border_enabled = True
+            root.config(cursor="fleur")
         elif self.is_near_bottom_edge(y_position):
             self.drag_border_enabled = True
+            root.config(cursor="fleur")
         else:
             self.drag_border_enabled = False
 
@@ -490,13 +600,18 @@ class ImageViewerApp:
                     rect_coords[2],
                     rect_coords[3] + y_delta,
                 ]
+                control_set["cropped_image"] = self.get_cropped_image(
+                    control_set["rect_coords"]
+                )
 
     def stop_drag_image_and_border(self, event):
+        root.config(cursor="left_ptr")
         # Dừng việc di chuyển khi nhả chuột
         self.start_drag_y = None
         self.drag_border_enabled = False
 
     ###  DRAW RECTANGLE  ###
+
     def toggle_fixed_rect(self, control_set):
         pass
 
@@ -532,6 +647,7 @@ class ImageViewerApp:
             )
 
     def start_drawing_rect(self, event, draw_frame):
+        root.config(cursor="crosshair")
         control_set = self.current_control_set
         if not control_set["draw_var"]:
             return
@@ -588,6 +704,7 @@ class ImageViewerApp:
             )
 
     def stop_drawing_rect(self, event, draw_frame):
+        root.config(cursor="left_ptr")
         control_set = self.current_control_set
         if not control_set["draw_var"]:
             return
@@ -642,6 +759,7 @@ class ImageViewerApp:
             draw_frame.configure(highlightbackground="white")
 
     ###  DROP IMAGE AND DISPLAY RECTANGLE INFOMATION  ###
+
     def display_cropped_image(self, control_set):
         # img = cv2.cvtColor(np.array(control_set["cropped_image"]), cv2.COLOR_RGB2GRAY)
         # cv2.imwrite("./"+"fileName.png", img);
@@ -659,7 +777,7 @@ class ImageViewerApp:
                 f"({int(rect_coords[0])}, {int(rect_coords[1])}, {int(rect_coords[2])}, {int(rect_coords[3])})"
             )
             control_set["cropped_image"] = self.get_cropped_image(rect_coords)
-            self.display_cropped_image(control_set)
+            # self.display_cropped_image(control_set)
 
     def recognize_all_entries(self):
         for control_set in self.control_sets:
