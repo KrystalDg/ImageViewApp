@@ -31,7 +31,7 @@ dataloader:
   num_workers: 3
   pin_memory: true
 dataset:
-  data_root: ./data_line/
+  data_root: ./vn_data_line/
   image_height: 32
   image_max_width: 512
   image_min_width: 32

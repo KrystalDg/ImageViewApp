@@ -1,5 +1,5 @@
 import mysql.connector
-
+from tkinter.messagebox import showerror
 
 def initialize_connection():
     conn = None
@@ -9,7 +9,6 @@ def initialize_connection():
         conn = mysql.connector.connect(
             host="localhost", user="root", password="minh", database="lvtn_hk231"
         )
-
         isConnect = True
         print("Database Connected")
     except:
@@ -67,7 +66,35 @@ def create_table(cursor):
                 boQuocTich VARCHAR(50)
             )"""
         )
-
+    else:
+        cursor.execute("DROP TABLE person_infomation")
+        cursor.execute(
+            """CREATE TABLE person_infomation(
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                so VARCHAR(50),
+                quyenSo VARCHAR(50),
+                trangSo VARCHAR(50),
+                nksHoTen VARCHAR(50),
+                nksGioiTinh VARCHAR(50),
+                nksNgaySinh VARCHAR(50),
+                nksNoiSinh VARCHAR(50),
+                nksQueQuan VARCHAR(50),
+                nksDanToc VARCHAR(50),
+                nksQuocTich VARCHAR(50),
+                meHoTen VARCHAR(50),
+                meNgaySinh VARCHAR(50),
+                meNoiSinh VARCHAR(50),
+                meQueQuan VARCHAR(50),
+                meDanToc VARCHAR(50),
+                meQuocTich VARCHAR(50),
+                boHoTen VARCHAR(50),
+                boNgaySinh VARCHAR(50),
+                boNoiSinh VARCHAR(50),
+                boQueQuan VARCHAR(50),
+                boDanToc VARCHAR(50),
+                boQuocTich VARCHAR(50)
+            )"""
+        )
 
 def get_table_header(cursor):
     cursor.execute("SHOW columns FROM person_infomation")
@@ -76,6 +103,9 @@ def get_table_header(cursor):
 
 
 def submit(conn, cursor, col, row):
-    query = f"INSERT INTO person_infomation ({col}) VALUES ({row})"
-    cursor.execute(query)
-    conn.commit()
+    try:
+        query = f"INSERT INTO person_infomation ({col}) VALUES ({row})"
+        cursor.execute(query)
+        conn.commit()
+    except Exception as e:
+        showerror("Error", f"Error submitting data: {str(e)}")

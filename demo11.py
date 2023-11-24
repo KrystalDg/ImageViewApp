@@ -1,16 +1,17 @@
 import os
+import threading
 import tkinter as tk
 from tkinter import filedialog, ttk
 from tkinter.messagebox import showerror, showinfo, showwarning
 
+import cv2
 import fitz  # PyMuPDF
+import numpy as np
 from PIL import Image, ImageTk
 
 from database.database import *
 from vietocr_model.vietocr_model import *
 
-# Establish a connection to the MySQL database
-conn, cursor = initialize_connection()
 
 class ImageViewerApp:
     ###  INIT FUNCTION  ###
@@ -40,37 +41,66 @@ class ImageViewerApp:
         # Thêm một bộ nút mới
         self.current_control_set = None
         self.control_sets = []
+
         # Tạo biến để lưu tọa độ chuột khi bắt đầu di chuyển
         self.start_drag_y = None
 
-        self.used_colors = []  # Danh sách các màu đã sử dụng
-        self.next_color_index = 0  # Biến để theo dõi màu tiếp theo
+        # Danh sách các màu đã sử dụng và theo dõi màu tiếp theo
+        self.used_colors = []
+        self.next_color_index = 0
+
         # Add a variable to store the current PDF document
         self.pdf_document = None
         self.current_page = 0
 
+        # Check value for submit
+        self.isValid = False
+        self.isRecognize = False
+
         self.ignore_path = [".gitignore", "ai-env", ".git", "__pycache__", "weights"]
 
-        # Set GUI
-        self.setup_left_column()
-        self.setup_image_display()
-        self.setup_right_column()
+        # Khởi tạo các luồng cho database và model OCR
+        self.db_thread = threading.Thread(target=self.initialize_database)
+        self.ocr_thread = threading.Thread(target=self.initialize_ocr_model)
 
-        headers = get_table_header(cursor)
-        for header in headers:
-            if header != "id":
-                self.add_control_set(header)
+        # Bắt đầu chạy luồng cho database
+        self.db_thread.start()
 
-        # Thêm sự kiện chuột cho thay đổi kích thước border
-        self.define_drag_border()
-
-        # Thêm sự kiện chuột cho thay đổi kích thước border
-        self.define_resize_border()
-
-        # Khởi tạo model OCR
-        self.ocr = OCRModel("vietocr_model/weights/transformerocr_custom.pth")
+        # Kết thúc giao diện khi luồng database hoàn thành
+        root.after(100, self.check_db_thread_completion)
 
     ###  SETUP APP  ###
+    def check_db_thread_completion(self):
+        if self.db_thread.is_alive():
+            # Nếu chưa hoàn thành, kiểm tra lại sau 100ms
+            self.root.after(100, self.check_db_thread_completion)
+        else:
+            # Nếu luồng database đã hoàn thành, bắt đầu chạy luồng cho model OCR
+            self.ocr_thread.start()
+
+            # Kkhởi tạo giao diện
+            self.setup_left_column()
+            self.setup_image_display()
+            self.setup_right_column()
+
+            headers = get_table_header(self.cursor)
+            for header in headers:
+                if header != "id":
+                    self.add_control_set(header)
+
+            # Thêm sự kiện chuột cho thay đổi kích thước border
+            self.define_drag_border()
+
+            # Thêm sự kiện chuột cho thay đổi kích thước border
+            self.define_resize_border()
+
+    def initialize_database(self):
+        conn, cursor = initialize_connection()
+        self.conn = conn
+        self.cursor = cursor
+
+    def initialize_ocr_model(self):
+        self.ocr = OCRModel("vietocr_model/weights/transformerocr_custom.pth")
 
     def setup_left_column(self):
         self.left_column_frame = ttk.Frame(self.root, width=300, style="Left.TFrame")
@@ -137,15 +167,7 @@ class ImageViewerApp:
         )
         h_scrollbar.grid(row=0, column=0, sticky="ews")
 
-        # v_scrollbar = ttk.Scrollbar(
-        #     self.image_column_frame, orient="vertical", command=self.image_canvas.yview
-        # )
-        # v_scrollbar.grid(row=0, column=0, sticky="nse")
-
-        self.image_canvas.config(
-            xscrollcommand=h_scrollbar.set,
-            # yscrollcommand=v_scrollbar.set
-        )
+        self.image_canvas.config(xscrollcommand=h_scrollbar.set)
         # Add buttons for navigating PDF pages
         self.page_button_frame = ttk.Frame(
             self.image_column_frame, width=1200, style=""
@@ -178,7 +200,7 @@ class ImageViewerApp:
         canvas = tk.Canvas(
             right_frame,
             bg="white",
-            height=850,
+            height=900,
             width=330,
             highlightthickness=0,
             borderwidth=2,
@@ -199,9 +221,6 @@ class ImageViewerApp:
         # Frame chứa các control_set
         self.control_container = tk.Frame(canvas)
         canvas.create_window((0, 0), window=self.control_container, anchor="nw")
-
-        # self.cropped_canvas = tk.Canvas(right_frame, bg="white", width=300, height=100)
-        # self.cropped_canvas.grid(row=2, column=0, pady=0)
 
         # Thiết lập thanh cuộn dọc cho Frame chứa các control_set
         self.control_container.update_idletasks()  # Cập nhật geometry trước khi thiết lập cuộn
@@ -305,14 +324,6 @@ class ImageViewerApp:
         entry = ttk.Entry(entry_frame, textvariable=control_set["output_var"], width=30)
         entry.grid(row=1, column=0, sticky="we")
 
-        # get_position_button = ttk.Button(
-        #     button_frame,
-        #     text="Get Rectangle Position",
-        #     command=lambda: self.update_rectangle_position(control_set),
-        #     style="TButton",
-        # )
-        # get_position_button.grid(row=2, column=0, columnspan=4, pady=10, sticky="w")
-
     def populate_treeview(self, folder_path):
         self.treeview.delete(*self.treeview.get_children())
         self.add_treeview_node("", folder_path, isRoot=True)
@@ -412,6 +423,25 @@ class ImageViewerApp:
 
             cropped_image = self.image.crop((x1, y1, x2, y2))
             return cropped_image
+
+    def is_image_blank(self, image):
+        if image:
+            image = np.array(image)
+            gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            _, thresh = cv2.threshold(gray_image, 240, 255, cv2.THRESH_BINARY)
+
+            # Đếm số điểm ảnh trắng trong ảnh
+            white_pixel_count = cv2.countNonZero(thresh)
+
+            # Tính tỉ lệ điểm ảnh trắng trên tổng số điểm ảnh
+            white_pixel_ratio = white_pixel_count / (image.shape[0] * image.shape[1])
+
+            # Xác định ngưỡng để xem ảnh có được coi là trắng hay không
+            threshold_ratio = 0.99
+
+            return white_pixel_ratio > threshold_ratio
+
+        return False
 
     ###  RUN APP  ###
 
@@ -747,7 +777,7 @@ class ImageViewerApp:
         self.drag_border_enabled = True
         self.define_drag_border()
 
-    def reset_draw(self, control_set, draw_frame):
+    def reset_draw(self, control_set, draw_frame=None):
         if control_set.get("current_rect"):
             self.image_canvas.delete(control_set["current_rect"])
             control_set["current_rect"] = None
@@ -759,16 +789,10 @@ class ImageViewerApp:
             control_set["style"].configure(
                 f"{control_set['label_text']}.TButton", foreground="black"
             )
-            draw_frame.configure(highlightbackground="white")
+            if draw_frame != None:
+                draw_frame.configure(highlightbackground="white")
 
     ###  DROP IMAGE AND DISPLAY RECTANGLE INFOMATION  ###
-
-    def display_cropped_image(self, control_set):
-        # img = cv2.cvtColor(np.array(control_set["cropped_image"]), cv2.COLOR_RGB2GRAY)
-        # cv2.imwrite("./"+"fileName.png", img);
-        cropped_photo = ImageTk.PhotoImage(control_set["cropped_image"])
-        self.cropped_canvas.create_image(0, 0, anchor=tk.NW, image=cropped_photo)
-        self.cropped_canvas.image = cropped_photo
 
     def reset_coordinates_input(self, control_set):
         control_set["output_var"].set("")
@@ -776,35 +800,47 @@ class ImageViewerApp:
     def update_rectangle_position(self, control_set):
         rect_coords = control_set["rect_coords"]
         if rect_coords:
-            control_set["output_var"].set(
-                f"({int(rect_coords[0])}, {int(rect_coords[1])}, {int(rect_coords[2])}, {int(rect_coords[3])})"
-            )
             control_set["cropped_image"] = self.get_cropped_image(rect_coords)
-            # self.display_cropped_image(control_set)
 
     def recognize_all_entries(self):
         for control_set in self.control_sets:
-            if control_set.get("cropped_image"):
+            if control_set.get("cropped_image") and not self.is_image_blank(
+                control_set["cropped_image"]
+            ):
                 info = self.ocr.recognize(control_set["cropped_image"])
                 control_set["output_var"].set(info)
+                if control_set["output_var"].get() != "":
+                    self.isValid = True
+        self.isRecognize = True
 
     def submit_all_entries(self):
         # Create lists to store column names and values
         columns = []
         values = []
 
+        if not self.isValid or not self.isRecognize:
+            showerror("Error", "Empty value")
+            return
+
         for control_set in self.control_sets:
             columns.append(control_set["label_text"])
             values.append(control_set["output_var"].get())
             control_set["output_var"].set("")
 
+            if not control_set["fix_var"].get() and control_set.get("current_rect"):
+                self.reset_draw(control_set)
+
         # Join the lists into a comma-separated string for the query
         columns_str = ", ".join(columns)
         values_str = ", ".join(f"'{value}'" for value in values)
-        submit(conn, cursor, columns_str, values_str)
+        submit(self.conn, self.cursor, columns_str, values_str)
+
         border_coords = self.image_canvas.coords(self.border_rectangle)
         y_delta = border_coords[3] - border_coords[1]
         self.move_border(y_delta)
+
+        self.isValid = False
+        self.isRecognize = False
 
 
 if __name__ == "__main__":
