@@ -23,6 +23,14 @@ class ImageViewerApp:
         self.root.title("Image Viewer")
         self.root.geometry("1920x1080")
 
+        # Tạo một kiểu mới để cài đặt font chữ cho toàn bộ chương trình
+        self.custom_style = ttk.Style()
+        self.custom_style.configure(".", font=("Helvetica", 10))
+
+        # Tạo một kiểu mới để cài đặt font chữ cho Treeview
+        self.treeview_style = ttk.Style()
+        self.treeview_style.configure("Treeview", font=("Helvetica", 10))
+
         self.current_image_path = None
         self.image = None
         self.photo = None
@@ -57,6 +65,7 @@ class ImageViewerApp:
         # Check value for submit
         self.isValid = False
         self.isEmptyAll = True
+
         self.current_file_path = tk.StringVar()
 
         self.ignore_path = [".gitignore", "ai-env", ".git", "__pycache__", "weights"]
@@ -114,11 +123,17 @@ class ImageViewerApp:
         self.ocr = OCRModel()
 
     def setup_left_column(self):
-        self.left_column_frame = ttk.Frame(self.root, width=300, style="Left.TFrame")
+        self.left_column_frame = tk.Frame(self.root, background="gray")
         self.left_column_frame.grid(row=0, column=0, sticky="ns")
 
+        container_frame = tk.Frame(self.left_column_frame)
+        container_frame.grid(row=0, column=0, padx=1)
+
+        button_frame = tk.Frame(container_frame)
+        button_frame.grid(row=0, column=0, pady=9)
+
         browse_button = ttk.Button(
-            self.left_column_frame,
+            button_frame,
             text="Chọn Thư Mục",
             command=self.select_folder,
             style="TButton",
@@ -126,15 +141,18 @@ class ImageViewerApp:
         )
         browse_button.grid(row=0, column=0, pady=10)
 
-        treeview_frame = ttk.Frame(self.left_column_frame, width=300)
-        treeview_frame.grid(row=1, column=0, sticky="nsew")
+        treeview_frame = ttk.Frame(button_frame, width=300)
+        treeview_frame.grid(row=1, column=0, pady=5, sticky="nsew")
 
         # Thêm Treeview
         self.treeview = ttk.Treeview(
-            treeview_frame, columns=("name",), height=30, show="tree"
+            treeview_frame,
+            columns=("name",),
+            height=32,
+            show="tree",
+            selectmode="browse",
         )
         self.treeview.grid(row=0, column=0, sticky="nsew")
-
         self.treeview.heading("#0", text="File Explorer", anchor=tk.W)
         self.treeview.heading("name", text="Name", anchor=tk.W)
         self.treeview.column("#0", width=250)
@@ -158,54 +176,48 @@ class ImageViewerApp:
         self.populate_treeview(default_folder_path)
 
     def setup_image_display(self):
-        self.image_column_frame = ttk.Frame(self.root, width=1200, style="")
+        self.image_column_frame = tk.Frame(self.root)
         self.image_column_frame.grid(row=0, column=1, sticky="nsew")
 
-        button_frame = ttk.Frame(self.image_column_frame)
-        button_frame.grid(row=0, column=0, padx=5, pady=5, sticky="we")
+        file_button_frame = tk.Frame(self.image_column_frame)
+        file_button_frame.grid(row=0, column=1, padx=5, pady=15, sticky="we")
 
-        label = ttk.Label(button_frame, text="Choose data form:")
+        # Thêm nút chuyển tập tin trước
+        prev_file_button = ttk.Button(
+            file_button_frame,
+            text="Previous File",
+            command=self.show_previous_file,
+            style="TButton",
+            cursor="hand1",
+        )
+        prev_file_button.grid(row=0, column=0, padx=5, pady=0)
+
+        # Thêm nút chuyển tập tin tiếp theo
+        next_file_button = ttk.Button(
+            file_button_frame,
+            text="Next File",
+            command=self.show_next_file,
+            style="TButton",
+            cursor="hand1",
+        )
+        next_file_button.grid(row=0, column=1, padx=5, pady=0)
+
+        form_button_frame = tk.Frame(self.image_column_frame)
+        form_button_frame.grid(row=0, column=2, padx=5, pady=15, sticky="we")
+
+        label = ttk.Label(form_button_frame, text="Data form:")
         label.grid(row=0, column=0, padx=15, sticky="w")
 
         # Button Frame
         for i in range(len(self.form_frame)):
             self.form_frame[i] = tk.Frame(
-                button_frame, highlightbackground="white", highlightthickness=3
+                form_button_frame, highlightbackground="white", highlightthickness=3
             )
             self.form_button(self.form_frame[i], self.data_form[i], i)
 
-        # Image Canvas
-        self.image_canvas = tk.Canvas(
-            self.image_column_frame,
-            bg="white",
-            width=1250,
-            height=900,
-            scrollregion=(0, 0, 0, 0),
-        )
-        self.image_canvas.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
-
-        self.h_scrollbar = ttk.Scrollbar(
-            self.image_column_frame,
-            orient="horizontal",
-            command=self.image_canvas.xview,
-            cursor="hand1",
-        )
-
-        self.v_scrollbar = ttk.Scrollbar(
-            self.image_column_frame,
-            orient="vertical",
-            command=self.image_canvas.yview,
-            cursor="hand1",
-        )
-
-        self.image_canvas.config(
-            xscrollcommand=self.h_scrollbar.set, yscrollcommand=self.v_scrollbar.set
-        )
         # Add buttons for navigating PDF pages
-        self.page_button_frame = ttk.Frame(
-            self.image_column_frame, width=1200, style=""
-        )
-        self.page_button_frame.grid(row=2, column=0, sticky="sew")
+        self.page_button_frame = ttk.Frame(self.image_column_frame)
+        self.page_button_frame.grid(row=0, column=0, padx=5, pady=15, sticky="we")
 
         prev_page_button = ttk.Button(
             self.page_button_frame,
@@ -225,24 +237,61 @@ class ImageViewerApp:
         )
         next_page_button.grid(row=0, column=1, padx=5, pady=5)
 
+        # Image Canvas
+        self.image_canvas_frame = tk.Frame(
+            self.image_column_frame, highlightbackground="black", highlightthickness=1
+        )
+        self.image_canvas_frame.grid(
+            row=1, column=0, columnspan=3, padx=10, pady=5, sticky="nsew"
+        )
+
+        self.image_canvas = tk.Canvas(
+            self.image_canvas_frame,
+            bg="white",
+            width=1240,
+            height=925,
+            scrollregion=(0, 0, 0, 0),
+        )
+        self.image_canvas.grid(row=0, column=0, padx=5)
+
+        self.h_scrollbar = ttk.Scrollbar(
+            self.image_column_frame,
+            orient="horizontal",
+            command=self.image_canvas.xview,
+            cursor="hand1",
+        )
+
+        self.v_scrollbar = ttk.Scrollbar(
+            self.image_column_frame,
+            orient="vertical",
+            command=self.image_canvas.yview,
+            cursor="hand1",
+        )
+
+        self.image_canvas.config(
+            xscrollcommand=self.h_scrollbar.set, yscrollcommand=self.v_scrollbar.set
+        )
+
     def setup_right_column(self):
-        right_frame = ttk.Frame(self.root)
+        right_frame = tk.Frame(self.root, background='gray')
         right_frame.grid(row=0, column=3, sticky="nsew")
+
+        container_frame = tk.Frame(right_frame)
+        container_frame.grid(row=0, column=0, padx=1, pady=0)
 
         # Sử dụng Canvas để có thể cuộn
         canvas = tk.Canvas(
-            right_frame,
+            container_frame,
             bg="white",
-            height=900,
+            height=890,
             width=330,
             highlightthickness=0,
-            borderwidth=2,
         )
-        canvas.grid(row=1, column=0, sticky="nsew")
+        canvas.grid(row=1, column=0, pady=10, padx=5, sticky="nsew")
 
         # Thêm thanh cuộn dọc
         v_scrollbar = ttk.Scrollbar(
-            right_frame, orient="vertical", command=canvas.yview, cursor="hand1"
+            container_frame, orient="vertical", command=canvas.yview, cursor="hand1"
         )
         v_scrollbar.grid(row=1, column=3, sticky="nse")
         canvas.config(yscrollcommand=v_scrollbar.set)
@@ -265,8 +314,8 @@ class ImageViewerApp:
         )
 
         # Thêm Frame mới cho nút "Submit" và "Recognize"
-        button_frame = ttk.Frame(right_frame)
-        button_frame.grid(row=0, column=0, pady=10)
+        button_frame = ttk.Frame(container_frame)
+        button_frame.grid(row=0, column=0, pady=5)
 
         recognize_button = ttk.Button(
             button_frame,
@@ -275,7 +324,7 @@ class ImageViewerApp:
             style="TButton",
             cursor="hand1",
         )
-        recognize_button.grid(row=0, column=1, padx=5, pady=5)
+        recognize_button.grid(row=0, column=1, padx=5, pady=15)
 
         submit_button = ttk.Button(
             button_frame,
@@ -284,15 +333,18 @@ class ImageViewerApp:
             style="TButton",
             cursor="hand1",
         )
-        submit_button.grid(row=0, column=0, padx=5, pady=5)
+        submit_button.grid(row=0, column=0, padx=5, pady=15)
 
         # Tạo một Frame mới cho Entry
         path_entry_frame = ttk.Frame(button_frame)
-        path_entry_frame.grid(row=1, column=0, columnspan=2, padx=5, sticky="we")
+        path_entry_frame.grid(row=1, column=0, columnspan=2, padx=0, sticky="we")
         self.path_entry = ttk.Entry(
-            path_entry_frame, textvariable=self.current_file_path, width=30
+            path_entry_frame,
+            textvariable=self.current_file_path,
+            width=38,
+            font=("Helvetica", 9),
         )
-        self.path_entry.grid(row=1, column=0, pady=5, sticky="we")
+        self.path_entry.grid(row=1, column=0, pady=0, padx=5, sticky="we")
 
     ###  HELPER FUNCTION  ###
 
@@ -364,14 +416,14 @@ class ImageViewerApp:
     def setup_controls(self, control_set):
         control_frame = ttk.Frame(self.control_container)
         control_frame.grid(
-            row=len(self.control_sets) - 1, column=0, pady=10, sticky="we"
+            row=len(self.control_sets) - 1, column=0, pady=5, sticky="we"
         )
         # Tạo một Frame mới cho Button
         button_frame = ttk.Frame(control_frame)
-        button_frame.grid(row=0, column=0, padx=5, pady=5, sticky="we")
+        button_frame.grid(row=0, column=0, padx=0, pady=5, sticky="we")
         # Tạo một Frame mới cho Entry
         entry_frame = ttk.Frame(control_frame)
-        entry_frame.grid(row=1, column=0, padx=5, pady=0, sticky="we")
+        entry_frame.grid(row=1, column=0, padx=0, pady=0, sticky="we")
 
         fix_checkbox = ttk.Checkbutton(
             button_frame,
@@ -381,13 +433,13 @@ class ImageViewerApp:
             style="TCheckbutton",
             cursor="hand1",
         )
-        fix_checkbox.grid(row=0, column=0, padx=5, sticky="w")
+        fix_checkbox.grid(row=0, column=0, padx=0, sticky="w")
 
         # Thêm một Frame cho Draw button
         draw_frame = tk.Frame(
             button_frame, highlightbackground="white", highlightthickness=3
         )
-        draw_frame.grid(row=0, column=1, padx=5, sticky="w")
+        draw_frame.grid(row=0, column=1, padx=0, sticky="w")
 
         draw_button = ttk.Button(
             draw_frame,
@@ -407,15 +459,28 @@ class ImageViewerApp:
         )
         reset_draw_button.grid(row=0, column=2, padx=5)
 
-        label = ttk.Label(button_frame, text=control_set["label_text"])
-        label.grid(row=0, column=3, padx=5, sticky="w")
+        label = ttk.Label(button_frame, text=control_set["label_text"], wraplength=180)
+        label.grid(row=0, column=3, padx=0, sticky="w")
 
-        entry = ttk.Entry(entry_frame, textvariable=control_set["output_var"], width=30)
+        entry = ttk.Entry(
+            entry_frame,
+            textvariable=control_set["output_var"],
+            width=40,
+            font=("Helvetica", 9),
+        )
         entry.grid(row=1, column=0, sticky="we")
 
     def populate_treeview(self, folder_path):
+        # Lưu lại item đang được chọn
+        current_item = self.treeview.selection()
+
         self.treeview.delete(*self.treeview.get_children())
         self.add_treeview_node("", folder_path, isRoot=True)
+
+        # Nếu có item được chọn trước đó, chọn lại nó
+        if current_item:
+            self.treeview.selection_set(current_item)
+            self.treeview.focus(current_item)
 
     def add_treeview_node(self, parent, node_path, isRoot=False):
         if isRoot:
@@ -439,13 +504,17 @@ class ImageViewerApp:
                     item_path = os.path.join(node_path, item)
                     if os.path.isdir(item_path):
                         self.add_treeview_node(node, item_path)
-                    else:
+                    elif item_path.lower().endswith(".pdf"):
                         self.treeview.insert(
                             node, "end", text=item, values=(item_path, "file")
                         )
 
-    def treeview_item_selected(self, event):
-        item_id = self.treeview.selection()
+    def treeview_item_selected(self, event, item_id=None):
+        if self.current_file_path.get() != "":
+            self.prev_folder = self.current_file_path.get().split("/")[0]
+            print(self.prev_folder)
+        if not item_id:
+            item_id = self.treeview.selection()
         if item_id:
             item_type = self.treeview.item(item_id, "values")[1]
             if item_type == "file":
@@ -458,6 +527,24 @@ class ImageViewerApp:
                     self.load_image(file_path)
                 else:
                     showerror(title="Error", message="Please choose image or PDF file.")
+
+    def show_previous_file(self):
+        current_item = self.treeview.selection()
+        if current_item:
+            prev_item = self.treeview.prev(current_item)
+            if prev_item:
+                self.treeview.selection_set(prev_item)
+                self.treeview.focus(prev_item)
+                self.treeview_item_selected(None, item_id=prev_item)
+
+    def show_next_file(self):
+        current_item = self.treeview.selection()
+        if current_item:
+            next_item = self.treeview.next(current_item)
+            if next_item:
+                self.treeview.selection_set(next_item)
+                self.treeview.focus(next_item)
+                self.treeview_item_selected(None, item_id=next_item)
 
     def select_folder(self):
         folder_path = filedialog.askdirectory()
@@ -533,6 +620,12 @@ class ImageViewerApp:
             return white_pixel_ratio > threshold_ratio
 
         return False
+
+    def is_same_folder(self):
+        if self.prev_folder == self.current_file_path.get().split("/")[0]:
+            return True
+        else: 
+            return False
 
     ###  RUN APP  ###
 
@@ -613,7 +706,7 @@ class ImageViewerApp:
                 self.image_canvas.winfo_height() * (image.width / image.height)
             )
             new_height = self.image_canvas.winfo_height()
-            self.h_scrollbar.grid(row=1, column=0, sticky="ews")
+            self.h_scrollbar.grid(row=1, column=0, columnspan=3, sticky="ews")
             self.v_scrollbar.grid_remove()
         else:
             # Ngược lại, fit theo chiều rộng
@@ -621,7 +714,7 @@ class ImageViewerApp:
             new_height = int(
                 self.image_canvas.winfo_width() * (image.height / image.width)
             )
-            self.v_scrollbar.grid(row=1, column=0, sticky="nse")
+            self.v_scrollbar.grid(row=1, column=0, columnspan=3, sticky="nse")
             self.h_scrollbar.grid_remove()
 
         self.image = image.resize((new_width, new_height))
@@ -629,12 +722,16 @@ class ImageViewerApp:
 
         # Update the Canvas
         self.image_canvas.config(scrollregion=(0, 0, new_width, new_height))
-        self.image_canvas.delete("all")
-        image_label = self.image_canvas.create_image(
+        # self.image_canvas.delete("all")
+        self.image_canvas.create_image(
             0, 0, anchor=tk.NW, image=self.photo
         )
 
-        self.create_border_rectangle()
+        if self.border_rectangle and self.is_same_folder():
+            self.redraw_border_and_rect()
+        else:
+            self.create_border_rectangle()
+
 
     ###  RESIZE RED BORDER  ###
 
@@ -744,6 +841,28 @@ class ImageViewerApp:
         # Dừng việc di chuyển khi nhả chuột
         self.start_drag_y = None
         self.drag_border_enabled = False
+
+    def redraw_border_and_rect(self):
+        border_coords = self.image_canvas.coords(self.border_rectangle)
+        self.border_rectangle = self.image_canvas.create_rectangle(
+            border_coords[0], border_coords[1], self.image.width, border_coords[3], outline="red", width=3
+        )
+        for control_set in self.control_sets:
+            temp_all_rect = []
+            if control_set["fix_var"].get() and control_set.get("current_rect"):
+                control_set["cropped_image"] = []
+                for rect in control_set["all_rect"]:
+                    rect_coords = self.image_canvas.coords(rect)
+                    control_set["current_rect"] = self.image_canvas.create_rectangle(
+                        rect_coords,
+                        outline=control_set["color"],
+                        width=2,
+                    )
+                    temp_all_rect.append(control_set["current_rect"])
+                    control_set["cropped_image"].append(
+                        self.get_cropped_image(rect_coords)
+                    )
+            control_set["all_rect"] = temp_all_rect
 
     ###  DRAW RECTANGLE  ###
 
