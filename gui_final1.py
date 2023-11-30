@@ -1,12 +1,12 @@
 import os
 import threading
 import tkinter as tk
-from datetime import datetime
 from tkinter import filedialog, ttk
 from tkinter.messagebox import showerror, showinfo, showwarning
 
 import cv2
 import fitz  # PyMuPDF
+from pdf2image import convert_from_path
 import numpy as np
 from PIL import Image, ImageTk
 
@@ -57,14 +57,8 @@ class ImageViewerApp:
         # Check value for submit
         self.isValid = False
         self.isEmptyAll = True
-        self.current_file_path = tk.StringVar()
 
         self.ignore_path = [".gitignore", "ai-env", ".git", "__pycache__", "weights"]
-
-        self.data_form = ["Cha Me Con", "Ket Hon", "Hon Nhan", "Khai Sinh", "Khai Tu"]
-        self.form_frame = ["cmc_frame", "kh_frame", "hn_frame", "ks_frame", "kt_frame"]
-        self.form_tables = ["cmc_form", "kh_form", "hn_form", "ks_form", "kt_form"]
-        self.form_headers = {}
 
         # Khởi tạo các luồng cho database và model OCR
         self.db_thread = threading.Thread(target=self.initialize_database)
@@ -85,16 +79,15 @@ class ImageViewerApp:
             # Nếu luồng database đã hoàn thành, bắt đầu chạy luồng cho model OCR
             self.ocr_thread.start()
 
-            # Khởi tạo giao diện
+            # Kkhởi tạo giao diện
             self.setup_left_column()
             self.setup_image_display()
             self.setup_right_column()
 
-            # headers = get_table_header(self.cursor, self.form_tables[0])
-            # self.create_control_set(headers)
-
-            self.headers_thread = threading.Thread(target=self.retrieve_headers)
-            self.headers_thread.start()
+            headers = get_table_header(self.cursor)
+            for header in headers:
+                if header != "id":
+                    self.add_control_set(header)
 
             # Thêm sự kiện chuột cho thay đổi kích thước border
             self.define_drag_border()
@@ -106,12 +99,9 @@ class ImageViewerApp:
         conn, cursor = initialize_connection()
         self.conn = conn
         self.cursor = cursor
-        self.tables = get_tables(cursor)
 
     def initialize_ocr_model(self):
-        # self.ocr = OCRModel("vietocr_model/weights/vgg_transformer_default.pth")
-        # self.ocr = OCRModel("vietocr_model/weights/transformerocr_custom.pth")
-        self.ocr = OCRModel()
+        self.ocr = OCRModel("vietocr_model/weights/vgg_transformer_default.pth")
 
     def setup_left_column(self):
         self.left_column_frame = ttk.Frame(self.root, width=300, style="Left.TFrame")
@@ -161,51 +151,39 @@ class ImageViewerApp:
         self.image_column_frame = ttk.Frame(self.root, width=1200, style="")
         self.image_column_frame.grid(row=0, column=1, sticky="nsew")
 
-        button_frame = ttk.Frame(self.image_column_frame)
-        button_frame.grid(row=0, column=0, padx=5, pady=5, sticky="we")
-
-        label = ttk.Label(button_frame, text="Choose data form:")
-        label.grid(row=0, column=0, padx=15, sticky="w")
-
-        # Button Frame
-        for i in range(len(self.form_frame)):
-            self.form_frame[i] = tk.Frame(
-                button_frame, highlightbackground="white", highlightthickness=3
-            )
-            self.form_button(self.form_frame[i], self.data_form[i], i)
-
-        # Image Canvas
         self.image_canvas = tk.Canvas(
             self.image_column_frame,
             bg="white",
-            width=1250,
+            width=1260,
             height=900,
             scrollregion=(0, 0, 0, 0),
         )
-        self.image_canvas.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
+        self.image_canvas.grid(row=0, column=0, padx=10, pady=20, sticky="nsew")
 
-        self.h_scrollbar = ttk.Scrollbar(
+        h_scrollbar = ttk.Scrollbar(
             self.image_column_frame,
             orient="horizontal",
             command=self.image_canvas.xview,
             cursor="hand1",
         )
+        h_scrollbar.grid(row=0, column=0, sticky="ews")
 
-        self.v_scrollbar = ttk.Scrollbar(
+        v_scrollbar = ttk.Scrollbar(
             self.image_column_frame,
             orient="vertical",
             command=self.image_canvas.yview,
             cursor="hand1",
         )
+        v_scrollbar.grid(row=0, column=0, sticky="nse")
 
         self.image_canvas.config(
-            xscrollcommand=self.h_scrollbar.set, yscrollcommand=self.v_scrollbar.set
+            xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set
         )
         # Add buttons for navigating PDF pages
         self.page_button_frame = ttk.Frame(
             self.image_column_frame, width=1200, style=""
         )
-        self.page_button_frame.grid(row=2, column=0, sticky="sew")
+        self.page_button_frame.grid(row=1, column=0, sticky="sew")
 
         prev_page_button = ttk.Button(
             self.page_button_frame,
@@ -286,62 +264,7 @@ class ImageViewerApp:
         )
         submit_button.grid(row=0, column=0, padx=5, pady=5)
 
-        # Tạo một Frame mới cho Entry
-        path_entry_frame = ttk.Frame(button_frame)
-        path_entry_frame.grid(row=1, column=0, columnspan=2, padx=5, sticky="we")
-        self.path_entry = ttk.Entry(
-            path_entry_frame, textvariable=self.current_file_path, width=30
-        )
-        self.path_entry.grid(row=1, column=0, pady=5, sticky="we")
-
     ###  HELPER FUNCTION  ###
-
-    def retrieve_headers(self):
-        for table in self.form_tables:
-            headers = get_table_header(self.cursor, table)
-            self.form_headers[table] = headers
-
-        self.toggle_database(self.form_frame[0], self.form_tables[0])
-
-    def form_button(self, frame, data, index):
-        frame.grid(row=0, column=index + 1, padx=5, sticky="w")
-        button = ttk.Button(
-            frame,
-            text=data,
-            command=lambda: self.toggle_database(frame, self.form_tables[index]),
-            style="TButton",
-            cursor="hand1",
-        )
-        button.grid(row=0, column=0, padx=0)
-
-    def reset_form_frame(self):
-        for frame in self.form_frame:
-            frame.configure(
-                highlightbackground="white",
-                highlightthickness=3,
-                highlightcolor="white",
-            )
-
-    def toggle_database(self, frame, table):
-        self.reset_form_frame()
-        frame.configure(
-            highlightbackground="black",
-            highlightcolor="black",
-        )
-        self.current_table = table
-        self.create_control_set(self.form_headers[table])
-
-    def create_control_set(self, headers):
-        for widget in self.control_container.winfo_children():
-            widget.destroy()
-
-        for control_set in self.control_sets:
-            self.reset_draw(control_set)
-        self.control_sets = []
-
-        for header in headers:
-            if header != "id" and header != "dataFilePath":
-                self.add_control_set(header)
 
     def add_control_set(self, label_text):
         color = self.get_next_color()
@@ -350,13 +273,12 @@ class ImageViewerApp:
             "fix_var": tk.BooleanVar(),
             "draw_var": False,
             "rect_coords": None,
-            "cropped_image": [],
+            "cropped_image": None,
             "current_rect": None,
             "fixed_rect": False,
             "output_var": tk.StringVar(),
             "color": color,  # Sử dụng màu từ danh sách
             "style": ttk.Style(),
-            "all_rect": [],
         }
         self.control_sets.append(control_set)
         self.setup_controls(control_set)
@@ -450,8 +372,6 @@ class ImageViewerApp:
             item_type = self.treeview.item(item_id, "values")[1]
             if item_type == "file":
                 file_path = self.treeview.item(item_id, "values")[0]
-                self.current_file_path.set("/".join(file_path.split("/")[-2:]))
-
                 if ".pdf" in file_path:
                     self.load_pdf(file_path)
                 elif any(x in file_path for x in [".png", ".jpg", ".jpeg"]):
@@ -582,7 +502,7 @@ class ImageViewerApp:
         # Display the current page of the PDF
         if self.pdf_document:
             pdf_page = self.pdf_document[self.current_page]
-            pixmap = pdf_page.get_pixmap(matrix=fitz.Matrix(3, 3))
+            pixmap = pdf_page.get_pixmap(matrix=fitz.Matrix(9, 9))
             image = self.pixmap_to_pil_image(pixmap)
             self.display_image_from_pixmap(image)
 
@@ -606,23 +526,16 @@ class ImageViewerApp:
     def display_image_from_pixmap(self, image):
         if not image:
             return
+        canvas_height = self.image_canvas.winfo_height()
+        canvas_width = self.image_canvas.winfo_width()
 
         # Nếu chiều rộng lớn hơn chiều cao, fit theo chiều cao
         if image.width > image.height:
-            new_width = int(
-                self.image_canvas.winfo_height() * (image.width / image.height)
-            )
-            new_height = self.image_canvas.winfo_height()
-            self.h_scrollbar.grid(row=1, column=0, sticky="ews")
-            self.v_scrollbar.grid_remove()
-        else:
-            # Ngược lại, fit theo chiều rộng
-            new_width = self.image_canvas.winfo_width()
-            new_height = int(
-                self.image_canvas.winfo_width() * (image.height / image.width)
-            )
-            self.v_scrollbar.grid(row=1, column=0, sticky="nse")
-            self.h_scrollbar.grid_remove()
+            new_width = int(canvas_height * (image.width / image.height))
+            new_height = canvas_height
+        else:  # Ngược lại, fit theo chiều rộng
+            new_width = canvas_width
+            new_height = int(canvas_width * (image.height / image.width))
 
         self.image = image.resize((new_width, new_height))
         self.photo = ImageTk.PhotoImage(self.image)
@@ -731,13 +644,17 @@ class ImageViewerApp:
         self.image_canvas.move(self.border_rectangle, 0, y_delta)
         for control_set in self.control_sets:
             if control_set["fix_var"].get() and control_set.get("current_rect"):
-                control_set["cropped_image"] = []
-                for rect in control_set["all_rect"]:
-                    self.image_canvas.move(rect, 0, y_delta)
-                    rect_coords = self.image_canvas.coords(rect)
-                    control_set["cropped_image"].append(
-                        self.get_cropped_image(rect_coords)
-                    )
+                self.image_canvas.move(control_set["current_rect"], 0, y_delta)
+                rect_coords = self.image_canvas.coords(control_set["current_rect"])
+                control_set["rect_coords"] = [
+                    rect_coords[0],
+                    rect_coords[1],
+                    rect_coords[2],
+                    rect_coords[3],
+                ]
+                control_set["cropped_image"] = self.get_cropped_image(
+                    control_set["rect_coords"]
+                )
 
     def stop_drag_image_and_border(self, event):
         root.config(cursor="left_ptr")
@@ -771,7 +688,9 @@ class ImageViewerApp:
                 highlightcolor=control_set["color"],
             )
         else:
-            self.define_drag_border()
+            self.image_canvas.unbind("<ButtonPress-1>")
+            self.image_canvas.unbind("<B1-Motion>")
+            self.image_canvas.unbind("<ButtonRelease-1>")
             # Cập nhật màu nền của Frame
             draw_frame.configure(
                 highlightbackground="white",
@@ -786,7 +705,7 @@ class ImageViewerApp:
             return
 
         self.drag_border_enabled = False
-        # self.reset_draw(control_set, draw_frame)
+        self.reset_draw(control_set, draw_frame)
 
         rect_start_x = self.image_canvas.canvasx(event.x)
         rect_start_y = self.image_canvas.canvasy(event.y)
@@ -879,8 +798,7 @@ class ImageViewerApp:
 
     def reset_draw(self, control_set, draw_frame=None):
         if control_set.get("current_rect"):
-            for rect in control_set["all_rect"]:
-                self.image_canvas.delete(rect)
+            self.image_canvas.delete(control_set["current_rect"])
             control_set["current_rect"] = None
             control_set["rect_coords"] = None
             if not control_set["draw_var"]:
@@ -892,8 +810,8 @@ class ImageViewerApp:
             )
             if draw_frame != None:
                 draw_frame.configure(highlightbackground="white")
-        if control_set["cropped_image"]:
-            control_set["cropped_image"] = []
+        if control_set.get("cropped_image"):
+            control_set["cropped_image"] = None
 
     ###  DROP IMAGE AND DISPLAY RECTANGLE INFOMATION  ###
 
@@ -901,34 +819,24 @@ class ImageViewerApp:
         control_set["output_var"].set("")
 
     def update_rectangle_position(self, control_set):
-        control_set["all_rect"].append(control_set["current_rect"])
         rect_coords = control_set["rect_coords"]
-
         if rect_coords:
-            control_set["cropped_image"].append(self.get_cropped_image(rect_coords))
-
-        control_set["cropped_image"][-1].save("img1.png", "PNG")
+            control_set["cropped_image"] = self.get_cropped_image(rect_coords)
 
     def recognize_all_entries(self):
         self.isEmptyAll = True
-        startTime = datetime.now()
         for control_set in self.control_sets:
-            results = []
-            if control_set["cropped_image"]:
-                for image in control_set["cropped_image"]:
-                    if not self.is_image_blank(image):
-                        info = self.ocr.recognize(np.array(image))
-                        results.append(info)
-                control_set["output_var"].set(" ".join(results))
+            if control_set.get("cropped_image") and not self.is_image_blank(
+                control_set["cropped_image"]
+            ):
+                info = self.ocr.recognize(control_set["cropped_image"])
+                control_set["output_var"].set(info)
 
-            if control_set["output_var"].get() != "":
-                self.isEmptyAll = False
-
-        print(datetime.now() - startTime)
-
-        if self.isEmptyAll:
-            showerror("Error", "Empty field")
-            return
+                if control_set["output_var"].get() != "":
+                    self.isEmptyAll = True
+            # else:
+            # showerror("Error", "Empty field")
+            # return
 
     def submit_all_entries(self):
         # Create lists to store column names and values
@@ -947,12 +855,10 @@ class ImageViewerApp:
             if not control_set["fix_var"].get() and control_set.get("current_rect"):
                 self.reset_draw(control_set)
 
-        columns.append("dataFilePath")
-        values.append(self.current_file_path.get())
         # Join the lists into a comma-separated string for the query
         columns_str = ", ".join(columns)
         values_str = ", ".join(f"'{value}'" for value in values)
-        submit(self.conn, self.cursor, self.current_table, columns_str, values_str)
+        submit(self.conn, self.cursor, columns_str, values_str)
 
         border_coords = self.image_canvas.coords(self.border_rectangle)
         y_delta = border_coords[3] - border_coords[1]

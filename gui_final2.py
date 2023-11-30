@@ -1,7 +1,6 @@
 import os
 import threading
 import tkinter as tk
-from datetime import datetime
 from tkinter import filedialog, ttk
 from tkinter.messagebox import showerror, showinfo, showwarning
 
@@ -110,8 +109,7 @@ class ImageViewerApp:
 
     def initialize_ocr_model(self):
         # self.ocr = OCRModel("vietocr_model/weights/vgg_transformer_default.pth")
-        # self.ocr = OCRModel("vietocr_model/weights/transformerocr_custom.pth")
-        self.ocr = OCRModel()
+        self.ocr = OCRModel("vietocr_model/weights/transformerocr_custom.pth")
 
     def setup_left_column(self):
         self.left_column_frame = ttk.Frame(self.root, width=300, style="Left.TFrame")
@@ -289,9 +287,7 @@ class ImageViewerApp:
         # Tạo một Frame mới cho Entry
         path_entry_frame = ttk.Frame(button_frame)
         path_entry_frame.grid(row=1, column=0, columnspan=2, padx=5, sticky="we")
-        self.path_entry = ttk.Entry(
-            path_entry_frame, textvariable=self.current_file_path, width=30
-        )
+        self.path_entry = ttk.Entry(path_entry_frame, textvariable=self.current_file_path, width=30)
         self.path_entry.grid(row=1, column=0, pady=5, sticky="we")
 
     ###  HELPER FUNCTION  ###
@@ -300,7 +296,7 @@ class ImageViewerApp:
         for table in self.form_tables:
             headers = get_table_header(self.cursor, table)
             self.form_headers[table] = headers
-
+        
         self.toggle_database(self.form_frame[0], self.form_tables[0])
 
     def form_button(self, frame, data, index):
@@ -350,13 +346,12 @@ class ImageViewerApp:
             "fix_var": tk.BooleanVar(),
             "draw_var": False,
             "rect_coords": None,
-            "cropped_image": [],
+            "cropped_image": None,
             "current_rect": None,
             "fixed_rect": False,
             "output_var": tk.StringVar(),
             "color": color,  # Sử dụng màu từ danh sách
             "style": ttk.Style(),
-            "all_rect": [],
         }
         self.control_sets.append(control_set)
         self.setup_controls(control_set)
@@ -451,7 +446,7 @@ class ImageViewerApp:
             if item_type == "file":
                 file_path = self.treeview.item(item_id, "values")[0]
                 self.current_file_path.set("/".join(file_path.split("/")[-2:]))
-
+                
                 if ".pdf" in file_path:
                     self.load_pdf(file_path)
                 elif any(x in file_path for x in [".png", ".jpg", ".jpeg"]):
@@ -731,13 +726,17 @@ class ImageViewerApp:
         self.image_canvas.move(self.border_rectangle, 0, y_delta)
         for control_set in self.control_sets:
             if control_set["fix_var"].get() and control_set.get("current_rect"):
-                control_set["cropped_image"] = []
-                for rect in control_set["all_rect"]:
-                    self.image_canvas.move(rect, 0, y_delta)
-                    rect_coords = self.image_canvas.coords(rect)
-                    control_set["cropped_image"].append(
-                        self.get_cropped_image(rect_coords)
-                    )
+                self.image_canvas.move(control_set["current_rect"], 0, y_delta)
+                rect_coords = self.image_canvas.coords(control_set["current_rect"])
+                control_set["rect_coords"] = [
+                    rect_coords[0],
+                    rect_coords[1],
+                    rect_coords[2],
+                    rect_coords[3],
+                ]
+                control_set["cropped_image"] = self.get_cropped_image(
+                    control_set["rect_coords"]
+                )
 
     def stop_drag_image_and_border(self, event):
         root.config(cursor="left_ptr")
@@ -786,7 +785,7 @@ class ImageViewerApp:
             return
 
         self.drag_border_enabled = False
-        # self.reset_draw(control_set, draw_frame)
+        self.reset_draw(control_set, draw_frame)
 
         rect_start_x = self.image_canvas.canvasx(event.x)
         rect_start_y = self.image_canvas.canvasy(event.y)
@@ -879,8 +878,7 @@ class ImageViewerApp:
 
     def reset_draw(self, control_set, draw_frame=None):
         if control_set.get("current_rect"):
-            for rect in control_set["all_rect"]:
-                self.image_canvas.delete(rect)
+            self.image_canvas.delete(control_set["current_rect"])
             control_set["current_rect"] = None
             control_set["rect_coords"] = None
             if not control_set["draw_var"]:
@@ -892,8 +890,8 @@ class ImageViewerApp:
             )
             if draw_frame != None:
                 draw_frame.configure(highlightbackground="white")
-        if control_set["cropped_image"]:
-            control_set["cropped_image"] = []
+        if control_set.get("cropped_image"):
+            control_set["cropped_image"] = None
 
     ###  DROP IMAGE AND DISPLAY RECTANGLE INFOMATION  ###
 
@@ -901,34 +899,26 @@ class ImageViewerApp:
         control_set["output_var"].set("")
 
     def update_rectangle_position(self, control_set):
-        control_set["all_rect"].append(control_set["current_rect"])
         rect_coords = control_set["rect_coords"]
-
         if rect_coords:
-            control_set["cropped_image"].append(self.get_cropped_image(rect_coords))
+            control_set["cropped_image"] = self.get_cropped_image(rect_coords)
 
-        control_set["cropped_image"][-1].save("img1.png", "PNG")
+        control_set["cropped_image"].save("img1.png","PNG")
 
     def recognize_all_entries(self):
         self.isEmptyAll = True
-        startTime = datetime.now()
         for control_set in self.control_sets:
-            results = []
-            if control_set["cropped_image"]:
-                for image in control_set["cropped_image"]:
-                    if not self.is_image_blank(image):
-                        info = self.ocr.recognize(np.array(image))
-                        results.append(info)
-                control_set["output_var"].set(" ".join(results))
+            if control_set.get("cropped_image") and not self.is_image_blank(
+                control_set["cropped_image"]
+            ):
+                info = self.ocr.recognize(np.array(control_set["cropped_image"]))
+                control_set["output_var"].set(info)
 
-            if control_set["output_var"].get() != "":
-                self.isEmptyAll = False
-
-        print(datetime.now() - startTime)
-
-        if self.isEmptyAll:
-            showerror("Error", "Empty field")
-            return
+                if control_set["output_var"].get() != "":
+                    self.isEmptyAll = False
+            # else:
+            # showerror("Error", "Empty field")
+            # return
 
     def submit_all_entries(self):
         # Create lists to store column names and values
@@ -947,7 +937,7 @@ class ImageViewerApp:
             if not control_set["fix_var"].get() and control_set.get("current_rect"):
                 self.reset_draw(control_set)
 
-        columns.append("dataFilePath")
+        columns.append('dataFilePath')
         values.append(self.current_file_path.get())
         # Join the lists into a comma-separated string for the query
         columns_str = ", ".join(columns)
