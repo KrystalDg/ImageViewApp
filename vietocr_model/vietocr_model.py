@@ -36,9 +36,9 @@ def remove_noise(img):
 
     _, blackAndWhite = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    blackAndWhite = cv2.dilate(blackAndWhite, np.ones((2,2),np.uint8), iterations=1)
+    blackAndWhite = cv2.dilate(blackAndWhite, np.ones((2,1),np.uint8), iterations=1)
     blackAndWhite = cv2.erode(blackAndWhite, np.ones((2,2),np.uint8), iterations=1)
-    blackAndWhite = cv2.dilate(blackAndWhite, np.ones((1,2),np.uint8), iterations=1)
+    blackAndWhite = cv2.dilate(blackAndWhite, np.ones((2,1),np.uint8), iterations=1)
 
     nlabels, labels, stats, centroids = cv2.connectedComponentsWithStats(blackAndWhite, None, None, None, 8, cv2.CV_32S)
     sizes = stats[1:, -1] #get CC_STAT_AREA component
@@ -63,9 +63,10 @@ class OCRModel(object):
         else:
             self.weight_path = "vietocr_model/weights/vgg_transformer_default.pth"
 
-        self.config = Cfg.load_config_from_name('vgg_transformer')
+        # self.config = Cfg.load_config_from_name('vgg_transformer')
         # self.config = Cfg.load_config_from_name('vgg_seq2seq')
-        # self.config = Cfg.load_config_from_file('vietocr_model/config.yml')
+        self.config = Cfg.load_config_from_file('vietocr_model/config.yml')
+        # self.config = Cfg.load_config_from_file('vietocr_model/config_vgg_seq2seq.yml')
         self.config['weights'] = self.weight_path
         self.config['cnn']['pretrained']=False
         self.config['device'] = 'cpu'
@@ -80,8 +81,8 @@ class OCRModel(object):
 
 
 if __name__ == "__main__":
-    # ocr = OCRModel("vietocr_model/weights/transformerocr_custom.pth")
-    ocr = OCRModel()
+    ocr = OCRModel("vietocr_model/weights/transformerocr_custom_after.pth")
+    # ocr = OCRModel()
     img = Image.open('img1.png')
     s = ocr.recognize(np.array(img))
     print(s)

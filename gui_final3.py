@@ -822,8 +822,8 @@ class ImageViewerApp:
     def move_border(self, y_delta):
         self.image_canvas.move(self.border_rectangle, 0, y_delta)
         for control_set in self.control_sets:
+            control_set["cropped_image"] = []
             if control_set["fix_var"].get() and control_set.get("current_rect"):
-                control_set["cropped_image"] = []
                 for rect in control_set["all_rect"]:
                     self.image_canvas.move(rect, 0, y_delta)
                     rect_coords = self.image_canvas.coords(rect)
