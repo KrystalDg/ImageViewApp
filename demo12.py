@@ -26,6 +26,7 @@ class ImageViewerApp:
         # Tạo một kiểu mới để cài đặt font chữ cho toàn bộ chương trình
         self.custom_style = ttk.Style()
         self.custom_style.configure(".", font=("Helvetica", 10))
+        self.custom_style.configure("Landscape.TButton", font=("Helvetica", 16, "bold"))
 
         # Tạo một kiểu mới để cài đặt font chữ cho Treeview
         self.treeview_style = ttk.Style()
@@ -61,10 +62,13 @@ class ImageViewerApp:
         # Add a variable to store the current PDF document
         self.pdf_document = None
         self.current_page = 0
+        self.prev_folder = None
 
         # Check value for submit
         self.isValid = False
         self.isEmptyAll = True
+
+        self.landscape = False
 
         self.current_file_path = tk.StringVar()
 
@@ -319,14 +323,14 @@ class ImageViewerApp:
         button_frame = ttk.Frame(container_frame)
         button_frame.grid(row=0, column=0, pady=5)
 
-        recognize_button = ttk.Button(
+        landscape_button = ttk.Button(
             button_frame,
-            text="Recognize",
-            command=self.recognize_all_entries,
-            style="TButton",
+            text="▭",
+            command=lambda: self.toggle_landscape_border(),
+            style="Landscape.TButton",
             cursor="hand1",
         )
-        recognize_button.grid(row=0, column=1, padx=5, pady=15)
+        landscape_button.grid(row=0, column=0, padx=0, pady=15)
 
         submit_button = ttk.Button(
             button_frame,
@@ -335,11 +339,20 @@ class ImageViewerApp:
             style="TButton",
             cursor="hand1",
         )
-        submit_button.grid(row=0, column=0, padx=5, pady=15)
+        submit_button.grid(row=0, column=1, padx=0, pady=15)
+
+        recognize_button = ttk.Button(
+            button_frame,
+            text="Recognize",
+            command=self.recognize_all_entries,
+            style="TButton",
+            cursor="hand1",
+        )
+        recognize_button.grid(row=0, column=2, padx=0, pady=15)
 
         # Tạo một Frame mới cho Entry
         path_entry_frame = ttk.Frame(button_frame)
-        path_entry_frame.grid(row=1, column=0, columnspan=2, padx=0, sticky="we")
+        path_entry_frame.grid(row=1, column=0, columnspan=4, padx=0, sticky="we")
         self.path_entry = ttk.Entry(
             path_entry_frame,
             textvariable=self.current_file_path,
@@ -349,6 +362,22 @@ class ImageViewerApp:
         self.path_entry.grid(row=1, column=0, pady=0, padx=5, sticky="we")
 
     ###  HELPER FUNCTION  ###
+
+    def toggle_landscape_border(self):
+        if not self.image:
+            return
+
+        self.landscape = not self.landscape
+
+        if self.landscape:
+            self.custom_style.configure("Landscape.TButton", foreground="red")
+
+            self.create_border_rectangle()
+        else:
+            self.custom_style.configure("Landscape.TButton", foreground="black")
+
+            self.image_canvas.delete(self.border_rectangle)
+            self.border_rectangle = None
 
     def retrieve_headers(self):
         for table in self.form_tables:
@@ -445,7 +474,7 @@ class ImageViewerApp:
 
         draw_button = ttk.Button(
             draw_frame,
-            text="❖",
+            text="▣",
             command=lambda: self.toggle_draw_inside_rect(control_set, draw_frame),
             style=f"{control_set['label_text']}.TButton",
             cursor="hand1",
@@ -454,7 +483,7 @@ class ImageViewerApp:
 
         reset_draw_button = ttk.Button(
             button_frame,
-            text="✘",
+            text="✖",
             command=lambda: self.reset_draw(control_set, draw_frame),
             style="TButton",
             cursor="hand1",
@@ -467,7 +496,7 @@ class ImageViewerApp:
         entry = ttk.Entry(
             entry_frame,
             textvariable=control_set["output_var"],
-            width=40,
+            width=44,
             font=("Helvetica", 8),
         )
         entry.grid(row=1, column=0, sticky="we")
@@ -706,27 +735,21 @@ class ImageViewerApp:
         # self.image_canvas.delete("all")
         self.image_canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
 
-        if image.width > image.height:
-            if not self.border_rectangle:
-                self.create_border_rectangle()
-            else:
-                if self.is_same_folder():
-                    self.redraw_border_and_rect()
+        if self.is_same_folder():
+            self.redraw_border_and_rect()
+        else:
+            if self.prev_folder:
+                if image.width > image.height:
+                    self.landscape = False
                 else:
-                    self.create_border_rectangle()
-                    for control_set in self.control_sets:
-                        self.reset_draw(control_set)
-
-        if image.width <= image.height:
-            if self.border_rectangle:
-                self.image_canvas.delete(self.border_rectangle)
-                self.border_rectangle = None
-
-            if self.is_same_folder():
-                self.redraw_border_and_rect()
+                    self.landscape = True
+                self.toggle_landscape_border()
             else:
-                for control_set in self.control_sets:
-                    self.reset_draw(control_set)
+                if image.width > image.height:
+                    self.landscape = False
+                    self.toggle_landscape_border()
+            for control_set in self.control_sets:
+                self.reset_draw(control_set)
 
     ###  RESIZE RED BORDER  ###
 
@@ -1029,20 +1052,31 @@ class ImageViewerApp:
 
         control_set["cropped_image"][-1].save("img1.png", "PNG")
 
+    def recognize_entry(self, control_set):
+        results = []
+        if control_set["cropped_image"]:
+            for image in control_set["cropped_image"]:
+                if not self.is_image_blank(image):
+                    info = self.ocr.recognize(np.array(image))
+                    results.append(info)
+            control_set["output_var"].set(" ".join(results))
+
+        if control_set["output_var"].get() != "":
+            self.isEmptyAll = False
+
+    def check_ocr_thread_completion(self, ocr_thread):
+        for i in range(len(ocr_thread)):
+            if ocr_thread[i].is_alive():
+                self.root.after(100, self.check_ocr_thread_completion)
+
     def recognize_all_entries(self):
         self.isEmptyAll = True
+        ocr_thread = []
         startTime = datetime.now()
-        for control_set in self.control_sets:
-            results = []
-            if control_set["cropped_image"]:
-                for image in control_set["cropped_image"]:
-                    if not self.is_image_blank(image):
-                        info = self.ocr.recognize(np.array(image))
-                        results.append(info)
-                control_set["output_var"].set(" ".join(results))
-
-            if control_set["output_var"].get() != "":
-                self.isEmptyAll = False
+        for i in range(len(self.control_sets)):
+            ocr_thread.append(threading.Thread(target=self.recognize_entry(self.control_sets[i])))
+            ocr_thread[i].start()
+        self.check_ocr_thread_completion(ocr_thread)
 
         print(datetime.now() - startTime)
 
@@ -1081,6 +1115,7 @@ class ImageViewerApp:
             self.move_border(y_delta)
 
         self.isValid = False
+        self.isEmptyAll = True
 
 
 if __name__ == "__main__":
