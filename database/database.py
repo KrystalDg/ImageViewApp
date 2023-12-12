@@ -264,6 +264,32 @@ kt_query = """CREATE TABLE kt_form(
                 qgNuocNgoaiDaDangKy VARCHAR(50),
                 dataFilePath VARCHAR(50)
             )"""
+ht_query = """CREATE TABLE ht_form(
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                STT VARCHAR(50),
+                so VARCHAR(50),
+                quyenSo VARCHAR(50),
+                trangSo VARCHAR(50),
+                nksHoTen VARCHAR(50),
+                nksGioiTinh VARCHAR(50),
+                nksNgaySinh VARCHAR(50),
+                nksNoiSinh VARCHAR(50),
+                nksQueQuan VARCHAR(50),
+                nksDanToc VARCHAR(50),
+                nksQuocTich VARCHAR(50),
+                meHoTen VARCHAR(50),
+                meNgaySinh VARCHAR(50),
+                meNoiSinh VARCHAR(50),
+                meQueQuan VARCHAR(50),
+                meDanToc VARCHAR(50),
+                meQuocTich VARCHAR(50),
+                boHoTen VARCHAR(50),
+                boNgaySinh VARCHAR(50),
+                boNoiSinh VARCHAR(50),
+                boQueQuan VARCHAR(50),
+                boDanToc VARCHAR(50),
+                boQuocTich VARCHAR(50)
+            )"""
 
 
 def initialize_connection():
@@ -337,6 +363,12 @@ def create_table(cursor):
     else:
         cursor.execute("DROP TABLE kt_form")
         cursor.execute(kt_query)
+
+    if "ht_form" not in tables:
+        cursor.execute(ht_query)
+    else:
+        cursor.execute("DROP TABLE ht_form")
+        cursor.execute(ht_query)
 
 
 def get_table_header(cursor, table):

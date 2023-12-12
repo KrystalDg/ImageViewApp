@@ -74,9 +74,9 @@ class ImageViewerApp:
 
         self.ignore_path = [".gitignore", "ai-env", ".git", "__pycache__", "weights"]
 
-        self.data_form = ["Cha Me Con", "Ket Hon", "Hon Nhan", "Khai Sinh", "Khai Tu"]
-        self.form_frame = ["cmc_frame", "kh_frame", "hn_frame", "ks_frame", "kt_frame"]
-        self.form_tables = ["cmc_form", "kh_form", "hn_form", "ks_form", "kt_form"]
+        self.data_form = ["Ho Tich", "Cha Me Con", "Ket Hon", "Hon Nhan", "Khai Sinh", "Khai Tu"]
+        self.form_frame = ["ht_frame", "cmc_frame", "kh_frame", "hn_frame", "ks_frame", "kt_frame"]
+        self.form_tables = ["ht_form", "cmc_form", "kh_form", "hn_form", "ks_form", "kt_form"]
         self.form_headers = {}
 
         # Khởi tạo các luồng cho database và model OCR
@@ -635,8 +635,9 @@ class ImageViewerApp:
     def is_image_blank(self, image):
         if image:
             image = np.array(image)
-            gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-            _, thresh = cv2.threshold(gray_image, 245, 255, cv2.THRESH_BINARY)
+            # gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+            # _, thresh = cv2.threshold(gray_image, 245, 255, cv2.THRESH_BINARY)
+            thresh = remove_noise(image)
 
             # Đếm số điểm ảnh trắng trong ảnh
             white_pixel_count = cv2.countNonZero(thresh)
@@ -645,7 +646,7 @@ class ImageViewerApp:
             white_pixel_ratio = white_pixel_count / (image.shape[0] * image.shape[1])
 
             # Xác định ngưỡng để xem ảnh có được coi là trắng hay không
-            threshold_ratio = 0.9
+            threshold_ratio = 0.99
 
             return white_pixel_ratio > threshold_ratio
 
@@ -1024,24 +1025,24 @@ class ImageViewerApp:
         if control_set.get("current_rect"):
             for rect in control_set["all_rect"]:
                 self.image_canvas.delete(rect)
-            control_set["current_rect"] = None
-            control_set["rect_coords"] = None
+
             if not control_set["draw_var"]:
                 control_set["fix_var"].set(False)
-            self.reset_coordinates_input(control_set)
+
+            control_set["output_var"].set("")
+            control_set["all_rect"] = []
+            control_set["current_rect"] = None
+            control_set["rect_coords"] = None
+            control_set["cropped_image"] = []
 
             control_set["style"].configure(
                 f"{control_set['label_text']}.TButton", foreground="black"
             )
+
             if draw_frame != None:
                 draw_frame.configure(highlightbackground="white")
-        if control_set["cropped_image"]:
-            control_set["cropped_image"] = []
 
     ###  DROP IMAGE AND DISPLAY RECTANGLE INFOMATION  ###
-
-    def reset_coordinates_input(self, control_set):
-        control_set["output_var"].set("")
 
     def update_rectangle_position(self, control_set):
         control_set["all_rect"].append(control_set["current_rect"])
@@ -1073,6 +1074,7 @@ class ImageViewerApp:
         self.isEmptyAll = True
         ocr_thread = []
         startTime = datetime.now()
+
         for i in range(len(self.control_sets)):
             ocr_thread.append(threading.Thread(target=self.recognize_entry(self.control_sets[i])))
             ocr_thread[i].start()
