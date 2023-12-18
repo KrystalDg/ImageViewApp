@@ -103,9 +103,6 @@ class ImageViewerApp:
             self.setup_image_display()
             self.setup_right_column()
 
-            # headers = get_table_header(self.cursor, self.form_tables[0])
-            # self.create_control_set(headers)
-
             self.headers_thread = threading.Thread(target=self.retrieve_headers)
             self.headers_thread.start()
 
@@ -122,11 +119,8 @@ class ImageViewerApp:
         self.tables = get_tables(cursor)
 
     def initialize_ocr_model(self):
-        # self.ocr = OCRModel("vietocr_model/weights/vgg_transformer_default.pth")
-        # self.ocr = OCRModel("vietocr_model/weights/transformerocr_custom.pth")
         self.ocr = OCRModel("vietocr_model/weights/transformerocr_custom_after.pth")
-        # self.ocr = OCRModel("vietocr_model/weights/vgg_seq2seq.pth")
-        # self.ocr = OCRModel()
+
 
     def setup_left_column(self):
         self.left_column_frame = tk.Frame(self.root, background="gray")
@@ -633,26 +627,6 @@ class ImageViewerApp:
             cropped_image = self.image.crop((x1, y1, x2, y2))
             return cropped_image
 
-    def is_image_blank(self, image):
-        if image:
-            image = np.array(image)
-            # gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-            # _, thresh = cv2.threshold(gray_image, 245, 255, cv2.THRESH_BINARY)
-            thresh = remove_noise(image)
-
-            # Đếm số điểm ảnh trắng trong ảnh
-            white_pixel_count = cv2.countNonZero(thresh)
-
-            # Tính tỉ lệ điểm ảnh trắng trên tổng số điểm ảnh
-            white_pixel_ratio = white_pixel_count / (image.shape[0] * image.shape[1])
-
-            # Xác định ngưỡng để xem ảnh có được coi là trắng hay không
-            threshold_ratio = 0.99
-
-            return white_pixel_ratio > threshold_ratio
-
-        return False
-
     def is_same_folder(self):
         if self.prev_folder == self.current_file_path.get().split("/")[0]:
             return True
@@ -931,7 +905,6 @@ class ImageViewerApp:
             return
 
         self.drag_border_enabled = False
-        # self.reset_draw(control_set, draw_frame)
 
         rect_start_x = self.image_canvas.canvasx(event.x)
         rect_start_y = self.image_canvas.canvasy(event.y)
@@ -1058,7 +1031,6 @@ class ImageViewerApp:
         results = []
         if control_set["cropped_image"]:
             for image in control_set["cropped_image"]:
-                # if not self.is_image_blank(image):
                 info = self.ocr.recognize(np.array(image))
                 results.append(info)
             control_set["output_var"].set(" ".join(results))
@@ -1123,9 +1095,12 @@ class ImageViewerApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
+
+    # khoi tao theme
     import sv_ttk
 
     sv_ttk.use_light_theme()
 
+    #app
     app = ImageViewerApp(root)
     root.mainloop()

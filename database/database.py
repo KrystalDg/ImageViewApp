@@ -288,7 +288,8 @@ ht_query = """CREATE TABLE ht_form(
                 boNoiSinh VARCHAR(50),
                 boQueQuan VARCHAR(50),
                 boDanToc VARCHAR(50),
-                boQuocTich VARCHAR(50)
+                boQuocTich VARCHAR(50),
+                dataFilePath VARCHAR(50)
             )"""
 
 
